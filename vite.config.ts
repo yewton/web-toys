@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig(({ mode }) => ({
-  base: mode === 'production' ? '/web-toys/' : '/',
+  base: process.env.VITE_BASE_PATH ?? (mode === 'production' ? '/web-toys/' : '/'),
   build: {
     target: 'es2020',
     rollupOptions: {
