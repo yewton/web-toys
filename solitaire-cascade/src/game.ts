@@ -42,8 +42,14 @@ export function initCanvases(): void {
 }
 
 export function resize(): void {
-  config.width  = window.innerWidth;
-  config.height = window.innerHeight;
+  // clientWidth/Height is more reliable than innerWidth/Height on mobile
+  // (avoids stale values during initial load before browser UI settles)
+  const el = document.documentElement;
+  const w = el.clientWidth  || window.innerWidth;
+  const h = el.clientHeight || window.innerHeight;
+  if (w === config.width && h === config.height) return;
+  config.width  = w;
+  config.height = h;
   gameCanvas.width = blurCanvas.width = particleCanvas.width  = config.width;
   gameCanvas.height = blurCanvas.height = particleCanvas.height = config.height;
   config.CARD_W = Math.min(71, Math.floor(config.width / 7.5));
