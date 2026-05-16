@@ -1,11 +1,11 @@
-# Ant Nest Simulator (3D)
+# Ant Nest Simulator
 
 A simulator where ants autonomously dig their nest using a collective intelligence algorithm based on pheromones.
 
 ## Overview
 
 - Ants deposit pheromones while exploring and returning, deciding dig direction by following the trails of others
-- The grid is a 3D structure of `WIDTH × HEIGHT × DEPTH` (400 × 400 × 3), composited back-to-front for rendering
+- The grid is `WIDTH × HEIGHT × DEPTH` (400 × 400 × 3); the 3 depth layers are composited back-to-front to give a sense of depth
 - Two excavation modes — tunnel and room — switch based on depth and surrounding space density
 
 ## UI
@@ -46,7 +46,7 @@ src/
 ├── state.ts       singleton state (grid, pheromones, ant array)
 ├── grid.ts        grid manipulation functions
 ├── Ant.ts         ant behavior logic and rendering
-├── simulation.ts  render loop and 3D composite rendering
+├── simulation.ts  render loop and layered composite rendering
 └── main.ts        entry point and UI event wiring
 ```
 
