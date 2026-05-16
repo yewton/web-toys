@@ -5,10 +5,10 @@ node_modules/
 
 # Testing
 /test-results/
+/coverage/
 /tests/screenshots/
 /playwright-report/
 /blob-report/
-/test-results/
 
 # Production
 /dist/

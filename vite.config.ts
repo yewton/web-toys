@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE_PATH ?? (mode === 'production' ? '/web-toys/' : '/'),
@@ -10,6 +10,16 @@ export default defineConfig(({ mode }) => ({
         solitaire: 'solitaire-cascade/index.html',
         ants: 'ants-nest-simulator/index.html',
       },
+    },
+  },
+  test: {
+    environment: 'node',
+    include: ['**/src/__tests__/**/*.test.ts'],
+    reporters: ['default', 'junit'],
+    outputFile: { junit: 'test-results/junit.xml' },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
     },
   },
 }));
