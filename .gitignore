@@ -54,5 +54,8 @@ pids
 *.local
 
 # Gemini/Claude specific
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
 memory/
