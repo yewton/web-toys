@@ -72,6 +72,7 @@ export class Particle {
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    if (this.life <= 0) return;
     const { FOCAL_LENGTH, width, height } = config;
     let px = this.x, py = this.y, ps = this.size;
     if (this.isDepth) {

@@ -117,6 +117,7 @@ export class Card {
   }
 
   draw(ctxTarget: CanvasRenderingContext2D): void {
+    if (this.opacity <= 0) return;
     const { FOCAL_LENGTH, width, height, scale } = config;
     let px  = this.x + (71 * this.scaleMultiplier * scale) / 2;
     let py  = this.y + (96 * this.scaleMultiplier * scale) / 2;
