@@ -61,6 +61,15 @@ export function dirtColor(cy: number): string {
   return `${g}, ${b}`;
 }
 
+/** Returns the full rgba fill matching the gel gradient at depth cy */
+export function dirtFillStyle(cy: number): string {
+  const ratio = Math.max(0, Math.min(1, (cy - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL)));
+  const g = Math.round(180 - (180 - 120) * ratio);
+  const b = Math.round(255 - (255 - 230) * ratio);
+  const alpha = (0.35 + 0.10 * ratio).toFixed(2);
+  return `rgba(0, ${g}, ${b}, ${alpha})`;
+}
+
 /** Drops a small dirt clump underground (simulates loose fill after digging) */
 export function dropDirtInside(cx: number, cy: number, z: number): void {
   if (z < 0 || z >= DEPTH) return;
@@ -78,16 +87,12 @@ export function dropDirtInside(cx: number, cy: number, z: number): void {
     }
   }
 
-  const gb = dirtColor(cy);
   const gCtx = state.gelCtxs[z];
-  gCtx.save();
-  gCtx.filter = 'blur(1.5px)';
   gCtx.globalCompositeOperation = 'source-over';
-  gCtx.fillStyle = `rgba(0, ${gb}, 0.5)`;
+  gCtx.fillStyle = dirtFillStyle(cy);
   gCtx.beginPath();
   gCtx.arc(cx, cy, radius, 0, Math.PI * 2);
   gCtx.fill();
-  gCtx.restore();
 }
 
 /** Fills empty cells with dirt (2) and updates the render layer */
@@ -106,17 +111,11 @@ export function fillDirt(cx: number, cy: number, z: number, radius: number): voi
     }
   }
 
-  const gb = dirtColor(cy);
   const dCtx = state.dirtCtxs[z];
-  dCtx.save();
-  if (cy < GROUND_LEVEL) {
-    dCtx.filter = 'blur(2px)';
-  }
-  dCtx.fillStyle = `rgba(0, ${gb}, 0.6)`;
+  dCtx.fillStyle = dirtFillStyle(cy);
   dCtx.beginPath();
   dCtx.arc(cx, cy, radius, 0, Math.PI * 2);
   dCtx.fill();
-  dCtx.restore();
 }
 
 /** Visible mound may not appear above this Y. Leaves y=0..MOUND_TOP_LIMIT clear for surface ants. */
@@ -152,7 +151,7 @@ export function dropDirt(x: number, y: number, z: number): void {
   if (targetY < 0) return; // No valid surface column found — discard the dirt.
 
   const radius = 2 + Math.random() * 1.5;
-  const dropY = targetY - radius * 0.4;
+  const dropY = targetY;
   fillDirt(dropX, dropY, z, radius);
 }
 
