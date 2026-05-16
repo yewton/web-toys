@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|
 | `index.html` | Landing page listing all apps |
 | `solitaire-cascade/` | Klondike Solitaire Victory Cascade |
-| `ants-nest-simulator/` | Ant Nest Simulator (3D ant nest simulator) |
+| `ants-nest-simulator/` | Ant Nest Simulator (pheromone-driven ant nest simulator) |
 
 ## Commands
 
@@ -52,7 +52,7 @@ npm run test:visual  # visual E2E test (Playwright + Claude image evaluation)
 
 - **`state.ts`** — singleton holding all mutable simulation state (grid, pheromones, ant array, slider values)
 - **`grid.ts`** — grid manipulation functions (`makeDiggable`, `evaporatePheromone`)
-- **`simulation.ts`** — core render loop. Composites the 3D grid (WIDTH × HEIGHT × DEPTH) back-to-front. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests.
+- **`simulation.ts`** — core render loop. Composites the layered grid (WIDTH × HEIGHT × DEPTH, where DEPTH=3) back-to-front to create a depth effect. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests.
 
 Grid cell values: `0` = air, `1` = diggable soil, `3` = protected zone (not diggable).
 
