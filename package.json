@@ -2,6 +2,8 @@
   "name": "web-toys",
   "version": "1.0.0",
   "private": true,
+  "author": "yewton",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

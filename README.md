@@ -41,3 +41,7 @@ npm run test:visual  # visual E2E test (targets ants-nest-simulator)
 3. Add a card to the root `index.html`
 4. If using Tailwind, add its HTML/src paths to `tailwind.config.ts` content list
 5. Add the app's `src/` to `tsconfig.json` `include`
+
+## License
+
+MIT © [yewton](https://github.com/yewton)
