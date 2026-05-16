@@ -86,8 +86,21 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
 
 ## Visual E2E Tests (ants-nest-simulator)
 
-`npm run test:visual` launches a browser with Playwright, mechanically advances the simulation **30,000 steps**, captures a screenshot, then uses `claude --print` to evaluate whether an ant-nest-like structure has formed.
+Three Playwright tests live in `tests/`:
 
-- Test port is **5174** (no conflict even if another service is running on 5173)
-- Screenshot is saved to `tests/screenshots/ant-nest-latest.png` (in `.gitignore`)
-- `ANTHROPIC_API_KEY` is not required. Works as long as the `claude` CLI is in PATH
+| Test file | Steps | Purpose |
+|---|---|---|
+| `ant-nest-visual.spec.ts` | 30,000 | Verifies a nest-like structure forms (tunnels + dirt mound) via LLM evaluation |
+| `ant-nest-regression.spec.ts` | 300,000 | Regression guard: asserts surface-ant mean X stays within ±100 of center; no top-edge stacking |
+| `ant-nest-evolution.spec.ts` | 25,000 | Captures 5 timestamped screenshots (5k/10k/15k/20k/25k) for time-series visual review |
+
+- Port defaults to **5173**; set `PORT=5174` to avoid conflicts with a running dev server
+- Screenshots are saved to `tests/screenshots/` (in `.gitignore`)
+- `ant-nest-visual.spec.ts` requires `claude` CLI in PATH; the other two do not
+- `__antSimAdvance(n)` and `__antSimState` are exposed on `window` by `main.ts` for test use
+
+### Mandatory pre-PR check (ants-nest-simulator changes)
+
+These tests are **not** run in CI. Whenever a change touches `ants-nest-simulator/` or `tests/ant-nest-*`, run them locally before opening a PR and complete the VRT checklist in `.github/pull_request_template.md`. The checklist there is the single source of truth — do not duplicate it; just satisfy it.
+
+The `.claude/settings.json` PreToolUse hook prints a reminder when `gh pr create` is invoked on a branch with ants-nest-simulator changes.

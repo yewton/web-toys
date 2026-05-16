@@ -9,7 +9,7 @@ export const GROUND_LEVEL = 40;
 export const PROTECTED_DEPTH = 6;
 
 /** Pheromone evaporation factor per step */
-export const PHEROMONE_DECAY = 0.999;
+export const PHEROMONE_DECAY = 0.997;
 
 /** Pheromone deposited per step while exploring */
 export const PHEROMONE_DEPOSIT_EXPLORE = 0.001;

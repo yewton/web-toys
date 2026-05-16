@@ -220,71 +220,66 @@ describe('fillDirt', () => {
 });
 
 describe('dropDirt', () => {
-  it('places dirt when a type-3 surface exists below drop point', () => {
-    const z = 0;
-    // Set bottom row as protected surface
+  function findDirt(z: number, yMin = 0, yMax = HEIGHT): boolean {
     for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][HEIGHT - 1][x] = 3;
+      for (let y = yMin; y < yMax; y++) {
+        if (state.grids[z][y][x] === 2) return true;
+      }
+    }
+    return false;
+  }
+
+  it('places dirt on a type-3 protected surface at GROUND_LEVEL', () => {
+    const z = 0;
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][GROUND_LEVEL][x] = 3;
     }
     dropDirt(WIDTH / 2, 0, z);
-    // fillDirt should have placed type-2 cells above the bottom row
-    let foundDirt = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
-        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
-      }
-      if (foundDirt) break;
-    }
-    expect(foundDirt).toBe(true);
+    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
   });
 
-  it('places dirt via fallback when no type-2/3 landing spot is found (empty grid)', () => {
+  it('places dirt on a type-1 gel surface at GROUND_LEVEL', () => {
     const z = 0;
-    // Completely empty grid: no type-2 or type-3 cells, targetY stays HEIGHT-1
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][GROUND_LEVEL][x] = 1;
+    }
     dropDirt(WIDTH / 2, 0, z);
-    let foundDirt = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = HEIGHT - 6; y < HEIGHT; y++) {
-        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
-      }
-      if (foundDirt) break;
-    }
-    expect(foundDirt).toBe(true);
+    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
   });
 
-  it('fallback scan finds a type-1 cell and sets targetY', () => {
+  it('places dirt on existing type-2 mound at the surface', () => {
     const z = 0;
-    // type-1 (gel) cells at bottom row: main loop won't accept them (needs type-2/3)
-    // but the fallback scan accepts any > 0 cell
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][GROUND_LEVEL][x] = 2;
+    }
+    dropDirt(WIDTH / 2, 0, z);
+    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
+  });
+
+  it('discards the dirt on a fully empty grid', () => {
+    const z = 0;
+    dropDirt(WIDTH / 2, 0, z);
+    expect(findDirt(z)).toBe(false);
+  });
+
+  it('discards the dirt when the only solid sits deep below the surface (looks like tunnel interior)', () => {
+    const z = 0;
     for (let x = 0; x < WIDTH; x++) {
       state.grids[z][HEIGHT - 1][x] = 1;
     }
     dropDirt(WIDTH / 2, 0, z);
-    // fillDirt should have placed type-2 cells just above the gel row
-    let foundDirt = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
-        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
-      }
-      if (foundDirt) break;
-    }
-    expect(foundDirt).toBe(true);
+    expect(findDirt(z)).toBe(false);
   });
 
-  it('places dirt when a type-2 surface exists', () => {
+  it('does not pile dirt above the mound height cap (y < 20)', () => {
     const z = 0;
     for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][HEIGHT - 1][x] = 2;
+      for (let y = 20; y < HEIGHT; y++) {
+        state.grids[z][y][x] = 2;
+      }
     }
     dropDirt(WIDTH / 2, 0, z);
-    let foundDirt = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
-        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
-      }
-      if (foundDirt) break;
-    }
-    expect(foundDirt).toBe(true);
+    expect(findDirt(z, 0, 20)).toBe(false);
   });
 });
 
