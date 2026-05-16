@@ -20,6 +20,10 @@ export default defineConfig(({ mode }) => ({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],
+      exclude: [
+        // DOM-only module: requires document.createElement('canvas'), untestable in node env
+        '**/textures.ts',
+      ],
     },
   },
 }));
