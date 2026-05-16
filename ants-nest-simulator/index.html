@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ant Nest Simulator</title>
+</head>
+<body class="bg-[#f0f4f8] min-h-screen flex items-center justify-center p-4 font-sans text-gray-800">
+
+  <div class="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+    <div class="bg-blue-600 p-4 flex items-center justify-center relative">
+      <div class="absolute inset-0 bg-blue-500 opacity-50" style="background-image: linear-gradient(45deg, transparent 25%, rgba(255,255,255,.1) 25%, rgba(255,255,255,.1) 50%, transparent 50%, transparent 75%, rgba(255,255,255,.1) 75%, rgba(255,255,255,.1) 100%); background-size: 20px 20px;"></div>
+      <h1 class="text-white text-xl font-bold tracking-wider relative z-10 drop-shadow-md">
+        🐜 Ant Nest Simulator (3D)
+      </h1>
+    </div>
+
+    <div class="p-5 bg-gradient-to-b from-blue-50 to-blue-100 flex justify-center">
+      <div class="relative rounded-2xl overflow-hidden border-[6px] border-white acrylic-case bg-[#e6f7ff] w-full aspect-square max-w-[400px]">
+        <canvas id="simCanvas" class="w-full h-full block"></canvas>
+      </div>
+    </div>
+
+    <div class="p-6 bg-white">
+      <div class="space-y-6">
+        <div>
+          <div class="flex justify-between mb-1">
+            <label for="antCount" class="text-sm font-medium text-gray-700 flex items-center">
+              <span class="mr-2">🐜</span> Ant Count
+            </label>
+            <span id="antCountVal" class="text-sm font-bold text-blue-600">50</span>
+          </div>
+          <input type="range" id="antCount" min="0" max="200" value="50"
+                 class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1">
+            <label for="simSpeed" class="text-sm font-medium text-gray-700 flex items-center">
+              <span class="mr-2">⏱️</span> Simulation Speed
+            </label>
+            <span id="simSpeedVal" class="text-sm font-bold text-blue-600">1x</span>
+          </div>
+          <input type="range" id="simSpeed" min="1" max="20" value="1"
+                 class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+        </div>
+
+        <button id="resetBtn" class="w-full py-3 px-4 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-xl transition-colors duration-200 flex items-center justify-center shadow-sm">
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Flatten Soil (Reset)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
