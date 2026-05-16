@@ -104,3 +104,16 @@ Three Playwright tests live in `tests/`:
 These tests are **not** run in CI. Whenever a change touches `ants-nest-simulator/` or `tests/ant-nest-*`, run them locally before opening a PR and complete the VRT checklist in `.github/pull_request_template.md`. The checklist there is the single source of truth — do not duplicate it; just satisfy it.
 
 The `.claude/settings.json` PreToolUse hook prints a reminder when `gh pr create` is invoked on a branch with ants-nest-simulator changes.
+
+## Creating pull requests
+
+**Before running `gh pr create`**, you must:
+
+1. Read `.github/pull_request_template.md` with the Read tool.
+2. Fill every applicable section in **English**, following the template structure exactly.
+3. For ants-nest-simulator changes, complete the VRT checklist (check off each item you have actually run).
+
+The PreToolUse hook `.claude/hooks/pr-template-check.sh` enforces these rules mechanically and will **block** `gh pr create` if:
+
+- The body is missing a `## Summary` section, or
+- The body contains Japanese characters.

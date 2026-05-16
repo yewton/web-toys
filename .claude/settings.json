@@ -6,6 +6,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": ".claude/hooks/pr-template-check.sh"
+          },
+          {
+            "type": "command",
             "command": ".claude/hooks/ants-nest-vrt-reminder.sh"
           }
         ]
