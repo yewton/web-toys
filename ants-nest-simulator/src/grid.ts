@@ -81,8 +81,9 @@ export function dropDirtInside(cx: number, cy: number, z: number): void {
   const gb = dirtColor(cy);
   const gCtx = state.gelCtxs[z];
   gCtx.save();
+  gCtx.filter = 'blur(1.5px)';
   gCtx.globalCompositeOperation = 'source-over';
-  gCtx.fillStyle = `rgba(0, ${gb}, 0.8)`;
+  gCtx.fillStyle = `rgba(0, ${gb}, 0.5)`;
   gCtx.beginPath();
   gCtx.arc(cx, cy, radius, 0, Math.PI * 2);
   gCtx.fill();
@@ -107,10 +108,15 @@ export function fillDirt(cx: number, cy: number, z: number, radius: number): voi
 
   const gb = dirtColor(cy);
   const dCtx = state.dirtCtxs[z];
+  dCtx.save();
+  if (cy < GROUND_LEVEL) {
+    dCtx.filter = 'blur(2px)';
+  }
   dCtx.fillStyle = `rgba(0, ${gb}, 0.6)`;
   dCtx.beginPath();
   dCtx.arc(cx, cy, radius, 0, Math.PI * 2);
   dCtx.fill();
+  dCtx.restore();
 }
 
 /** Visible mound may not appear above this Y. Leaves y=0..MOUND_TOP_LIMIT clear for surface ants. */
