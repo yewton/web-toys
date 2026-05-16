@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from '../state';
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PHEROMONE_DECAY } from '../constants';
+import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH, PHEROMONE_DECAY } from '../constants';
 import {
   dirtColor,
   getGridType,
@@ -8,6 +8,11 @@ import {
   getPheromone,
   evaporatePheromone,
   makeDiggable,
+  digGel,
+  dropDirtInside,
+  fillDirt,
+  dropDirt,
+  attemptCreateNewEntrance,
 } from '../grid';
 
 function makeGrids() {
@@ -20,9 +25,24 @@ function makePheromone() {
   return Array.from({ length: DEPTH }, () => new Float32Array(WIDTH * HEIGHT));
 }
 
+function makeCanvasCtx(): CanvasRenderingContext2D {
+  const ctx: Record<string, unknown> = {
+    save: () => {},
+    restore: () => {},
+    beginPath: () => {},
+    arc: () => {},
+    fill: () => {},
+    fillStyle: '',
+    globalCompositeOperation: 'source-over',
+  };
+  return ctx as unknown as CanvasRenderingContext2D;
+}
+
 beforeEach(() => {
   state.grids = makeGrids();
   state.pheromone = makePheromone();
+  state.gelCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
+  state.dirtCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
 });
 
 describe('dirtColor', () => {
@@ -90,6 +110,184 @@ describe('getGridType', () => {
   });
 });
 
+describe('digGel', () => {
+  it('ignores out-of-bounds z', () => {
+    expect(() => digGel(10, 10, -1, 3)).not.toThrow();
+    expect(() => digGel(10, 10, DEPTH, 3)).not.toThrow();
+  });
+
+  it('excavates gel cells (type 1) to air (0)', () => {
+    state.grids[0][10][10] = 1;
+    digGel(10, 10, 0, 3);
+    expect(state.grids[0][10][10]).toBe(0);
+  });
+
+  it('excavates dirt cells (type 2) to air (0)', () => {
+    state.grids[0][10][10] = 2;
+    digGel(10, 10, 0, 3);
+    expect(state.grids[0][10][10]).toBe(0);
+  });
+
+  it('leaves protected cells (type 3) unchanged', () => {
+    state.grids[0][10][10] = 3;
+    digGel(10, 10, 0, 3);
+    expect(state.grids[0][10][10]).toBe(3);
+  });
+
+  it('does not affect cells outside the radius', () => {
+    const farX = 30;
+    state.grids[0][10][farX] = 1;
+    digGel(10, 10, 0, 3);
+    expect(state.grids[0][10][farX]).toBe(1);
+  });
+
+  it('handles cells at grid boundaries where some loop positions are out-of-bounds', () => {
+    // Center at (0,0) with radius=3 → some cells have y<0 or x<0 (out-of-bounds)
+    state.grids[0][0][0] = 1;
+    digGel(0, 0, 0, 3);
+    expect(state.grids[0][0][0]).toBe(0); // center cell excavated
+  });
+
+  it('excavates both gel and dirt cells in the same call', () => {
+    state.grids[0][10][9] = 1;
+    state.grids[0][10][11] = 2;
+    digGel(10, 10, 0, 5);
+    expect(state.grids[0][10][9]).toBe(0);
+    expect(state.grids[0][10][11]).toBe(0);
+  });
+});
+
+describe('dropDirtInside', () => {
+  it('ignores out-of-bounds z', () => {
+    expect(() => dropDirtInside(50, GROUND_LEVEL + 10, -1)).not.toThrow();
+    expect(() => dropDirtInside(50, GROUND_LEVEL + 10, DEPTH)).not.toThrow();
+  });
+
+  it('places gel (type 1) in empty cells at or below GROUND_LEVEL', () => {
+    const cx = 50, cy = GROUND_LEVEL + 5;
+    dropDirtInside(cx, cy, 0);
+    // Center cell should be filled
+    expect(state.grids[0][cy][cx]).toBe(1);
+  });
+
+  it('does not modify cells above GROUND_LEVEL', () => {
+    dropDirtInside(50, GROUND_LEVEL - 10, 0);
+    for (let y = 0; y < GROUND_LEVEL; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        expect(state.grids[0][y][x]).toBe(0);
+      }
+    }
+  });
+
+  it('does not overwrite non-empty cells', () => {
+    const cx = 50, cy = GROUND_LEVEL + 5;
+    state.grids[0][cy][cx] = 3;
+    dropDirtInside(cx, cy, 0);
+    expect(state.grids[0][cy][cx]).toBe(3);
+  });
+});
+
+describe('fillDirt', () => {
+  it('ignores out-of-bounds z', () => {
+    expect(() => fillDirt(10, 10, -1, 3)).not.toThrow();
+    expect(() => fillDirt(10, 10, DEPTH, 3)).not.toThrow();
+  });
+
+  it('fills empty cells in radius with dirt (type 2)', () => {
+    const cx = 50, cy = 50, radius = 3;
+    fillDirt(cx, cy, 0, radius);
+    expect(state.grids[0][cy][cx]).toBe(2);
+  });
+
+  it('does not overwrite non-empty cells', () => {
+    state.grids[0][50][50] = 1;
+    fillDirt(50, 50, 0, 3);
+    expect(state.grids[0][50][50]).toBe(1);
+  });
+
+  it('does not modify cells outside the radius', () => {
+    const cx = 50, cy = 50, radius = 1;
+    fillDirt(cx, cy, 0, radius);
+    // Cell at (cx+5, cy) is well outside radius=1
+    expect(state.grids[0][cy][cx + 5]).toBe(0);
+  });
+
+  it('fills cells on all z layers correctly', () => {
+    fillDirt(50, 50, 1, 3);
+    expect(state.grids[1][50][50]).toBe(2);
+    expect(state.grids[0][50][50]).toBe(0); // other z layers untouched
+  });
+});
+
+describe('dropDirt', () => {
+  it('places dirt when a type-3 surface exists below drop point', () => {
+    const z = 0;
+    // Set bottom row as protected surface
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][HEIGHT - 1][x] = 3;
+    }
+    dropDirt(WIDTH / 2, 0, z);
+    // fillDirt should have placed type-2 cells above the bottom row
+    let foundDirt = false;
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
+        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
+      }
+      if (foundDirt) break;
+    }
+    expect(foundDirt).toBe(true);
+  });
+
+  it('places dirt via fallback when no type-2/3 landing spot is found (empty grid)', () => {
+    const z = 0;
+    // Completely empty grid: no type-2 or type-3 cells, targetY stays HEIGHT-1
+    dropDirt(WIDTH / 2, 0, z);
+    let foundDirt = false;
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = HEIGHT - 6; y < HEIGHT; y++) {
+        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
+      }
+      if (foundDirt) break;
+    }
+    expect(foundDirt).toBe(true);
+  });
+
+  it('fallback scan finds a type-1 cell and sets targetY', () => {
+    const z = 0;
+    // type-1 (gel) cells at bottom row: main loop won't accept them (needs type-2/3)
+    // but the fallback scan accepts any > 0 cell
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][HEIGHT - 1][x] = 1;
+    }
+    dropDirt(WIDTH / 2, 0, z);
+    // fillDirt should have placed type-2 cells just above the gel row
+    let foundDirt = false;
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
+        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
+      }
+      if (foundDirt) break;
+    }
+    expect(foundDirt).toBe(true);
+  });
+
+  it('places dirt when a type-2 surface exists', () => {
+    const z = 0;
+    for (let x = 0; x < WIDTH; x++) {
+      state.grids[z][HEIGHT - 1][x] = 2;
+    }
+    dropDirt(WIDTH / 2, 0, z);
+    let foundDirt = false;
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = HEIGHT - 6; y < HEIGHT - 1; y++) {
+        if (state.grids[z][y][x] === 2) { foundDirt = true; break; }
+      }
+      if (foundDirt) break;
+    }
+    expect(foundDirt).toBe(true);
+  });
+});
+
 describe('depositPheromone / getPheromone', () => {
   it('starts at 0', () => {
     expect(getPheromone(10, 10, 0)).toBe(0);
@@ -119,6 +317,18 @@ describe('depositPheromone / getPheromone', () => {
 
   it('returns 0 for out-of-bounds x', () => {
     expect(getPheromone(WIDTH, 10, 0)).toBe(0);
+  });
+
+  it('returns 0 for out-of-bounds y', () => {
+    expect(getPheromone(10, HEIGHT, 0)).toBe(0);
+    expect(getPheromone(10, -1, 0)).toBe(0);
+  });
+
+  it('deposit ignores out-of-bounds y', () => {
+    depositPheromone(10, -1, 0, 0.5);
+    depositPheromone(10, HEIGHT, 0, 0.5);
+    // no-op; pheromone at valid cells stays 0
+    expect(getPheromone(10, 0, 0)).toBe(0);
   });
 });
 
@@ -161,5 +371,54 @@ describe('makeDiggable', () => {
   it('ignores out-of-bounds z', () => {
     makeDiggable(50, -1, 3, 5);
     makeDiggable(50, DEPTH, 3, 5);
+  });
+
+  it('handles width that extends outside grid boundaries', () => {
+    // cx=2, width=10 → x ranges from -8 to 12; negative x are out-of-bounds
+    for (let y = GROUND_LEVEL; y < GROUND_LEVEL + 10; y++) {
+      for (let x = 0; x < 15; x++) state.grids[0][y][x] = 3;
+    }
+    makeDiggable(2, 0, 10, 5);
+    // Cells at x=0 should be converted
+    expect(getGridType(0, GROUND_LEVEL, 0)).toBe(1);
+  });
+});
+
+describe('attemptCreateNewEntrance', () => {
+  it('creates a diggable entrance when valid positions exist', () => {
+    // Fill entire grid with protected cells (type 3) so all positions are valid
+    for (let z = 0; z < DEPTH; z++) {
+      for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          state.grids[z][y][x] = 3;
+        }
+      }
+    }
+    attemptCreateNewEntrance();
+    // At least some cells near GROUND_LEVEL should have changed from 3 → 1
+    let hasDiggable = false;
+    for (let z = 0; z < DEPTH; z++) {
+      for (let y = GROUND_LEVEL; y <= GROUND_LEVEL + PROTECTED_DEPTH + 2; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          if (state.grids[z][y][x] === 1) { hasDiggable = true; break; }
+        }
+        if (hasDiggable) break;
+      }
+      if (hasDiggable) break;
+    }
+    expect(hasDiggable).toBe(true);
+  });
+
+  it('does nothing when all positions have nearby openings', () => {
+    // All cells near GROUND_LEVEL are air → every position has a nearby opening
+    for (let z = 0; z < DEPTH; z++) {
+      for (let y = GROUND_LEVEL; y <= GROUND_LEVEL + 20; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          state.grids[z][y][x] = 0;
+        }
+      }
+    }
+    // Should not throw
+    expect(() => attemptCreateNewEntrance()).not.toThrow();
   });
 });

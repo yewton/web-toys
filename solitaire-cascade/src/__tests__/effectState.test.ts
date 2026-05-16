@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { effectState, effectConfig, particleConfig, getDynamicLimits } from '../effectState';
-import type { EffectState } from '../types';
+import { effectState, effectConfig, particleConfig, getDynamicLimits, currentParticleType, setCurrentParticleType } from '../effectState';
+import type { EffectState, ParticleType } from '../types';
 
 function resetEffects() {
   const keys = Object.keys(effectState) as (keyof EffectState)[];
   for (const k of keys) (effectState[k] as boolean) = false;
 }
 
-beforeEach(resetEffects);
+beforeEach(() => {
+  resetEffects();
+  setCurrentParticleType('normal');
+});
 
 describe('getDynamicLimits', () => {
   it('returns baseline when no effects are active', () => {
@@ -77,5 +80,26 @@ describe('particleConfig', () => {
   it('has unique ids', () => {
     const ids = particleConfig.map(p => p.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('setCurrentParticleType', () => {
+  it('updates currentParticleType', () => {
+    setCurrentParticleType('fire');
+    expect(currentParticleType).toBe('fire');
+  });
+
+  it('can be set to each particle type', () => {
+    const types: ParticleType[] = ['normal', 'fire', 'water', 'snow', 'star'];
+    for (const t of types) {
+      setCurrentParticleType(t);
+      expect(currentParticleType).toBe(t);
+    }
+  });
+
+  it('resets back to normal', () => {
+    setCurrentParticleType('star');
+    setCurrentParticleType('normal');
+    expect(currentParticleType).toBe('normal');
   });
 });
