@@ -1,66 +1,32 @@
-# Klondike Solitaire Victory Cascade
+# Solitaire Cascade
 
-An interactive visual effect inspired by the victory animation of Klondike Solitaire, where cards rain down the screen.
+An interactive browser demo that recreates the victory cascade animation from Klondike Solitaire.
 
-## Controls
+## Features
 
-| Input | Effect |
-|---|---|
-| Tap / Click | Summon a card at that position |
-| Drag / Swipe | Continuously spawn cards along the pointer trail |
-| Reflex button (hold) | Slow-motion effect (enhanced trail glow) |
-| Clear button | Remove all cards and particles and reset |
-| Play button | Auto mode: automatically plays through a 4-suit deck |
-| Settings button | Toggle effect and particle types |
+- **Card cascade** — click, tap, or drag to launch cards
+- **8 visual effects** — Spin / Giant / Flip / Depth / Neon / Chaos / Particles / Continuous Drag
+- **5 particle types** — Bubble / Fire / Water / Snow / Star
+- **Reflex Mode** — hold the button for slow-motion playback
+- **Auto Play** — automated demo mode that cycles through all four suit decks
+- **Responsive** — works on smartphones, tablets, and desktop
 
-## Effect Settings
+## Development
 
-### Card Effects
-
-| Effect | Description |
-|---|---|
-| Spin | Cards rotate as they fall |
-| Giant | Spawns larger-than-normal cards |
-| Z-Spin | Z-axis rotation (depth rotation) |
-| Depth | Perspective depth representation |
-| Neon | Glowing neon color effect |
-| Chaos | Scatter in random directions and speeds |
-| Particles | Attach particles to cards |
-| Continuous Drag | Continuously spawn while dragging |
-
-### Particle Types
-
-Choose from `normal` / `fire` / `water` / `snow` / `star`.
-
-## Architecture
-
-### 3-Layer Canvas
-
-```
-particleCanvas  ← foreground: particle rendering
-blurCanvas      ← middle: trails and reflex glow
-gameCanvas      ← background: green backdrop + card bodies
+```bash
+npm install
+npm run dev        # dev server → http://localhost:5173
+npm run build      # production build → dist/
+npm run preview    # serve dist/ locally
+npm run typecheck  # TypeScript type check only
 ```
 
-### Object Pools
+## Tech Stack
 
-`cardPool` / `particlePool` reuse instances to suppress GC. Returns to pool when `Card.active = false`.
+- [Vite](https://vitejs.dev/) — bundler + dev server
+- [TypeScript](https://www.typescriptlang.org/) — type-safe transpilation
+- Canvas API — pure 2D / pseudo-3D rendering without a UI framework
 
-### Module Structure
+## License
 
-```
-src/
-├── types.ts       suit, card value, and effect type definitions
-├── config.ts      layout dimension singleton (updated on resize)
-├── effectState.ts effect on/off and particle limit calculation
-├── textures.ts    card face texture generation and caching
-├── card.ts        Card class (physics and rendering)
-├── particle.ts    Particle class
-├── game.ts        main loop, card spawning, and Auto mode
-├── ui.ts          button and chip UI event wiring
-└── main.ts        entry point
-```
-
-### Auto Mode
-
-Automatically replays a 4-suit deck each time all cards have exited, continuing the animation endlessly.
+[MIT](LICENSE)
