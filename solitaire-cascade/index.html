@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Klondike Solitaire Victory Cascade - Iconic Card Fall with Modern Effects</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+</head>
+<body>
+  <div id="vignette">
+    <div class="vignette-darkness"></div>
+  </div>
+
+  <div class="instruction" id="instructionText">
+    <span class="material-symbols-rounded">touch_app</span>
+    <span class="material-symbols-rounded">swipe</span>
+    <span class="material-symbols-rounded">mouse</span>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+  <canvas id="blurCanvas"></canvas>
+  <canvas id="particleCanvas"></canvas>
+
+  <div class="ui-container">
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-header">
+        <button class="close-btn" id="btnCloseSettings" title="Close">
+          <span class="material-symbols-rounded" style="font-size:18px;">close</span>
+        </button>
+      </div>
+      <div class="setting-group">
+        <div class="chips-container" id="chipsContainer"></div>
+      </div>
+      <hr class="divider">
+      <div class="setting-group">
+        <div class="chips-container" id="particleChipsContainer"></div>
+      </div>
+    </div>
+    <div class="fab-row">
+      <button id="btnReflex" class="fab" title="Reflex Mode (Hold)"><span class="material-symbols-rounded">slow_motion_video</span></button>
+      <button id="btnClear" class="fab" title="Clear"><span class="material-symbols-rounded">cleaning_services</span></button>
+      <button id="btnSettings" class="fab" title="Settings"><span class="material-symbols-rounded">settings</span></button>
+      <button id="btnPlay" class="fab play-btn" title="Auto Play"><span class="material-symbols-rounded">play_arrow</span></button>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
