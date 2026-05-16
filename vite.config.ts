@@ -17,5 +17,9 @@ export default defineConfig(({ mode }) => ({
     include: ['**/src/__tests__/**/*.test.ts'],
     reporters: ['default', 'junit'],
     outputFile: { junit: 'test-results/junit.xml' },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+    },
   },
 }));
