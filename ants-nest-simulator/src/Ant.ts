@@ -65,7 +65,7 @@ export class Ant {
         }
       }
     }
-    return emptyCount / total > 0.4;
+    return emptyCount / total > 0.65;
   }
 
   update(): void {
@@ -253,9 +253,8 @@ export class Ant {
     this.turnCount++;
 
     if ((frontType === 3 || frontType === 2) && this.y < GROUND_LEVEL + 30) {
-      this.angle = Math.cos(this.angle) > 0 ? -0.2 : Math.PI + 0.2;
-      this.x += Math.cos(this.angle) * this.speed;
-      this.y += Math.sin(this.angle) * this.speed;
+      const turn = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 3 + Math.random() * Math.PI / 3);
+      this.angle += turn;
     } else if (this.turnCount > 3) {
       this.angle += (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * (Math.PI / 2));
       this.turnCount = 0;
@@ -280,7 +279,7 @@ export class Ant {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       if (this.hasDirt) {
         this.wanderAngle = -Math.PI / 2 + (Math.random() - 0.5) * 0.3;
-      } else if (Math.random() < depthRatio * 1.5) {
+      } else if (Math.random() < depthRatio * 0.7) {
         this.wanderAngle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
       } else {
         this.wanderAngle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
