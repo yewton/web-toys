@@ -151,8 +151,8 @@ export function dropDirt(x: number, y: number, z: number): void {
 
   if (targetY < 0) return; // No valid surface column found — discard the dirt.
 
-  const dropY = targetY - 1.5;
   const radius = 2 + Math.random() * 1.5;
+  const dropY = targetY - radius * 0.4;
   fillDirt(dropX, dropY, z, radius);
 }
 
