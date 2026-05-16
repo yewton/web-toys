@@ -86,8 +86,16 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
 
 ## Visual E2E Tests (ants-nest-simulator)
 
-`npm run test:visual` launches a browser with Playwright, mechanically advances the simulation **30,000 steps**, captures a screenshot, then uses `claude --print` to evaluate whether an ant-nest-like structure has formed.
+Two Playwright tests live in `tests/`:
 
-- Test port is **5174** (no conflict even if another service is running on 5173)
-- Screenshot is saved to `tests/screenshots/ant-nest-latest.png` (in `.gitignore`)
-- `ANTHROPIC_API_KEY` is not required. Works as long as the `claude` CLI is in PATH
+| Test file | Steps | Purpose |
+|---|---|---|
+| `ant-nest-visual.spec.ts` | 30,000 | Verifies a nest-like structure forms (tunnels + dirt mound) |
+| `ant-nest-regression.spec.ts` | 300,000 | Regression guard: asserts surface-ant mean X stays within ±100 of center (200 px); catches upper-right clustering |
+
+Run both with `npm run test:visual`.
+
+- Port defaults to **5173**; set `PORT=5174` to avoid conflicts with a running dev server
+- Screenshots are saved to `tests/screenshots/` (in `.gitignore`)
+- `ant-nest-visual.spec.ts` requires `claude` CLI in PATH; `ant-nest-regression.spec.ts` does not
+- `__antSimAdvance(n)` and `__antSimState` are exposed on `window` by `main.ts` for test use

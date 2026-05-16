@@ -113,41 +113,37 @@ export function fillDirt(cx: number, cy: number, z: number, radius: number): voi
   dCtx.fill();
 }
 
-/** Drops ant-carried dirt near the surface */
+/** Visible mound may not appear above this Y. Leaves y=0..MOUND_TOP_LIMIT clear for surface ants. */
+const MOUND_TOP_LIMIT = 20;
+/** Earliest scanY allowed; fillDirt drops at scanY-1.5 with radius up to 3.5, so scanY must clear MOUND_TOP_LIMIT+5. */
+const MOUND_MIN_SCAN_Y = MOUND_TOP_LIMIT + 5;
+/** Reject scans that fall deep below the surface — those are tunnel interiors, not the surface edge. */
+const MOUND_MAX_SCAN_Y = GROUND_LEVEL + 10;
+
+/** Drops ant-carried dirt near the surface. Skips the drop if all candidate columns have piled past the cap. */
 export function dropDirt(x: number, y: number, z: number): void {
   let dropX = x;
-  let targetY = HEIGHT - 1;
-  let foundValidSpot = false;
+  let targetY = -1;
 
-  // Randomize drop X so dirt doesn't plug the hole directly above
-  for (let attempt = 0; attempt < 5; attempt++) {
-    dropX = x + (Math.random() - 0.5) * 30;
-    dropX = Math.max(2, Math.min(WIDTH - 2, dropX));
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidateX = Math.max(2, Math.min(WIDTH - 2, x + (Math.random() - 0.5) * 60));
 
     let scanY = Math.floor(y);
     let hitType = 0;
     for (; scanY < HEIGHT; scanY++) {
-      hitType = getGridType(dropX, scanY, z);
+      hitType = getGridType(candidateX, scanY, z);
       if (hitType > 0) break;
     }
 
-    if (hitType === 2 || hitType === 3) {
+    // Accept any solid (gel/dirt/protected) at the surface edge; reject deep hits (tunnel interior).
+    if (hitType > 0 && scanY >= MOUND_MIN_SCAN_Y && scanY <= MOUND_MAX_SCAN_Y) {
+      dropX = candidateX;
       targetY = scanY;
-      foundValidSpot = true;
       break;
     }
   }
 
-  if (!foundValidSpot) {
-    dropX = x + (Math.random() - 0.5) * 10;
-    dropX = Math.max(2, Math.min(WIDTH - 2, dropX));
-    for (let scanY = Math.floor(y); scanY < HEIGHT; scanY++) {
-      if (getGridType(dropX, scanY, z) > 0) {
-        targetY = scanY;
-        break;
-      }
-    }
-  }
+  if (targetY < 0) return; // No valid surface column found — discard the dirt.
 
   const dropY = targetY - 1.5;
   const radius = 2 + Math.random() * 1.5;

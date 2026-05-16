@@ -24,4 +24,4 @@ document.getElementById('resetBtn')!.addEventListener('click', initSimulation);
 initSimulation();
 startLoop(canvas);
 
-Object.assign(window, { __antSimAdvance: advanceSimulation });
+Object.assign(window, { __antSimAdvance: advanceSimulation, __antSimState: state });

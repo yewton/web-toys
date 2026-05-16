@@ -7,8 +7,6 @@ function wrapAngle(diff: number): number {
   return diff;
 }
 
-type DigMode = 'none' | 'tunnel' | 'room';
-
 export class Ant {
   x: number;
   y: number;
@@ -16,15 +14,13 @@ export class Ant {
   angle: number;
   readonly speed = 0.7;
 
-  digMode: DigMode = 'none';
-  digTimer = 0;
-  targetDigAngle = 0;
   wanderAngle = Math.PI / 2;
   wanderTimer = 0;
 
   hasDirt = false;
   dropTimer = 0;
   turnCount = 0;
+  surfaceFrustration = 0;
 
   drawX: number;
   drawY: number;
@@ -65,14 +61,13 @@ export class Ant {
         }
       }
     }
-    return emptyCount / total > 0.4;
+    return emptyCount / total > 0.65;
   }
 
   update(): void {
-    // Prevent burial: push upward if trapped in dirt above ground
     const currentGridType = getGridType(this.x, this.y, this.z);
-    if (currentGridType >= 2 && this.y < GROUND_LEVEL) {
-      this.y -= 2.0;
+    if (currentGridType === 2 && this.y < GROUND_LEVEL) {
+      digGel(this.x, this.y, this.z, 2.5);
     } else if (currentGridType === 3) {
       this.y -= 2.0;
     }
@@ -103,7 +98,6 @@ export class Ant {
     const leftVal = leftType > 0 ? 1 : 0;
     const rightVal = rightType > 0 ? 1 : 0;
 
-    // Near the surface, steer toward the entrance when a hole is underfoot
     if (this.y < GROUND_LEVEL + 5 && !this.hasDirt) {
       const underType = getGridType(this.x, this.y + 6, this.z);
       if (underType === 1 || underType === 0) {
@@ -115,11 +109,13 @@ export class Ant {
       this.angle += wrapAngle(Math.PI / 2 - this.angle) * 0.05;
     }
 
-    if (this.digMode !== 'none') {
-      this.updateDigging(frontVal);
+    if (frontVal === 1) {
+      this.handleObstacle(frontType, leftVal, rightVal);
     } else {
-      this.updateWalking(frontVal, leftVal, rightVal, frontType, leftType, rightType);
+      this.handleFreeMovement();
     }
+
+    if (this.y >= GROUND_LEVEL) this.surfaceFrustration = 0;
 
     this.x = Math.max(0, Math.min(WIDTH, this.x));
     this.y = Math.max(0, Math.min(HEIGHT, this.y));
@@ -127,65 +123,6 @@ export class Ant {
     if (this.x === WIDTH) this.angle = Math.PI;
     if (this.y === 0) this.angle = Math.PI / 2;
     if (this.y === HEIGHT) this.angle = -Math.PI / 2;
-  }
-
-  private updateDigging(frontVal: number): void {
-    if (this.digMode === 'tunnel' && frontVal === 0) {
-      this.digMode = 'none';
-      this.hasDirt = true;
-      return;
-    }
-
-    const radius = this.digMode === 'room' ? 10 : 1.5;
-    const digX = this.x + Math.cos(this.angle) * 2;
-    const digY = this.y + Math.sin(this.angle) * 2;
-
-    digGel(digX, digY, this.z, radius);
-
-    if (this.digMode === 'tunnel') {
-      this.x += Math.cos(this.angle) * (this.speed * 0.4);
-      this.y += Math.sin(this.angle) * (this.speed * 0.4);
-
-      this.angle += wrapAngle(this.targetDigAngle - this.angle) * 0.15;
-      this.angle += (Math.random() - 0.5) * 0.1;
-
-      if (Math.random() < 0.03) {
-        const nextZ = this.z + (Math.random() < 0.5 ? -1 : 1);
-        if (nextZ >= 0 && nextZ < DEPTH) this.z = nextZ;
-      }
-    } else {
-      this.x += Math.cos(this.angle) * (this.speed * 0.1);
-      this.y += Math.sin(this.angle) * (this.speed * 0.1);
-      this.angle += 0.3 + (Math.random() - 0.5) * 0.2;
-
-      if (this.z - 1 >= 0) digGel(digX, digY, this.z - 1, radius * 0.6);
-      if (this.z + 1 < DEPTH) digGel(digX, digY, this.z + 1, radius * 0.6);
-    }
-
-    this.digTimer--;
-    if (this.digTimer <= 0) {
-      this.digMode = 'none';
-      this.hasDirt = true;
-      this.angle += Math.PI;
-      this.wanderAngle = -Math.PI / 2;
-      this.wanderTimer = 100;
-      this.turnCount = 0;
-    }
-  }
-
-  private updateWalking(
-    frontVal: number,
-    leftVal: number,
-    rightVal: number,
-    frontType: number,
-    _leftType: number,
-    _rightType: number,
-  ): void {
-    if (frontVal === 1) {
-      this.handleObstacle(frontType, leftVal, rightVal);
-    } else {
-      this.handleFreeMovement();
-    }
   }
 
   private handleObstacle(frontType: number, leftVal: number, rightVal: number): void {
@@ -196,7 +133,7 @@ export class Ant {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       const inWideSpace = this.y >= GROUND_LEVEL + 15 ? this.isWideSpace() : false;
 
-      if (this.y < GROUND_LEVEL + PROTECTED_DEPTH + 5 && frontType === 1) {
+      if (this.y < GROUND_LEVEL + PROTECTED_DEPTH + 5) {
         digProb = 0.8;
       } else if (isDeadEnd) {
         digProb = 1.0;
@@ -208,44 +145,31 @@ export class Ant {
     }
 
     if (digProb > 0 && Math.random() < digProb) {
-      this.startDigging(isDeadEnd);
+      this.digOneCell();
     } else {
       this.avoidObstacle(frontType, leftVal, rightVal);
     }
   }
 
-  private startDigging(isDeadEnd: boolean): void {
-    this.turnCount = 0;
-
-    const depthFromGround = this.y - GROUND_LEVEL;
-    const roomProb = depthFromGround > 150 ? 0.2 : 0.1;
-
-    if (this.y >= GROUND_LEVEL + 15 && isDeadEnd && Math.random() < roomProb) {
-      this.digMode = 'room';
-      this.digTimer = 200 + Math.random() * 200;
-    } else {
-      this.digMode = 'tunnel';
-      this.digTimer = 120 + Math.random() * 80;
-
-      if (this.y < GROUND_LEVEL + PROTECTED_DEPTH + 5) {
-        this.targetDigAngle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
-      } else {
-        // High pheromone (busy area) → branch horizontally; low (unexplored) → dig downward
-        const localPh = getPheromone(this.x, this.y, this.z);
-        const horizontalBias = Math.min(0.65, localPh * 1.8);
-        const r = Math.random();
-        if (r < horizontalBias) {
-          this.targetDigAngle = Math.random() > 0.5
-            ? (Math.random() - 0.5) * 0.5
-            : Math.PI + (Math.random() - 0.5) * 0.5;
-        } else {
-          const r2 = Math.random();
-          if (r2 < 0.50) this.targetDigAngle = Math.PI / 2;
-          else if (r2 < 0.70) this.targetDigAngle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI / 3;
-          else if (r2 < 0.90) this.targetDigAngle = Math.PI / 2 - (Math.random() - 0.5) * Math.PI / 3;
-          else this.targetDigAngle = Math.random() > 0.5 ? Math.PI / 6 : Math.PI - Math.PI / 6;
-        }
-      }
+  /**
+   * Per-cell dig with forward sustain: shave one small chunk of gel (radius 1.5) and step forward
+   * a fraction of normal speed. Tunnels lengthen via repeated single-bite digs, never via a burst.
+   * On each bite there's a small chance the ant decides "I have enough" — it grabs the dirt, turns
+   * around, and heads back toward the surface to deposit it.
+   */
+  private digOneCell(): void {
+    const digX = this.x + Math.cos(this.angle) * 2;
+    const digY = this.y + Math.sin(this.angle) * 2;
+    digGel(digX, digY, this.z, 1.5);
+    this.x += Math.cos(this.angle) * this.speed * 0.4;
+    this.y += Math.sin(this.angle) * this.speed * 0.4;
+    this.angle += (Math.random() - 0.5) * 0.15;
+    if (Math.random() < 0.05) {
+      this.hasDirt = true;
+      this.angle += Math.PI;
+      this.wanderAngle = this.y >= GROUND_LEVEL ? -Math.PI / 2 : Math.PI / 2;
+      this.wanderTimer = 100;
+      this.turnCount = 0;
     }
   }
 
@@ -253,7 +177,9 @@ export class Ant {
     this.turnCount++;
 
     if ((frontType === 3 || frontType === 2) && this.y < GROUND_LEVEL + 30) {
-      this.angle = Math.cos(this.angle) > 0 ? -0.2 : Math.PI + 0.2;
+      if (frontType === 3 && !this.hasDirt) this.surfaceFrustration++;
+      const dir = Math.random() > 0.5 ? 0 : Math.PI;
+      this.angle = dir + (Math.random() - 0.5) * 0.4;
       this.x += Math.cos(this.angle) * this.speed;
       this.y += Math.sin(this.angle) * this.speed;
     } else if (this.turnCount > 3) {
@@ -279,13 +205,26 @@ export class Ant {
     if (this.wanderTimer <= 0) {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       if (this.hasDirt) {
-        this.wanderAngle = -Math.PI / 2 + (Math.random() - 0.5) * 0.3;
-      } else if (Math.random() < depthRatio * 1.5) {
+        this.wanderAngle = this.y >= GROUND_LEVEL
+          ? -Math.PI / 2 + (Math.random() - 0.5) * 0.3
+          : Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+        this.wanderTimer = 100 + Math.random() * 150;
+      } else if (this.y < GROUND_LEVEL) {
+        // Surface explorer: prefer long horizontal traversals so they sample the whole surface.
+        if (Math.random() < 0.3) {
+          this.wanderAngle = Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+        } else {
+          const dir = Math.random() > 0.5 ? 0 : Math.PI;
+          this.wanderAngle = dir + (Math.random() - 0.5) * 0.5;
+        }
+        this.wanderTimer = 250 + Math.random() * 300;
+      } else if (Math.random() < depthRatio * 0.7) {
         this.wanderAngle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
+        this.wanderTimer = 100 + Math.random() * 200;
       } else {
         this.wanderAngle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
+        this.wanderTimer = 100 + Math.random() * 200;
       }
-      this.wanderTimer = 100 + Math.random() * 200;
     }
 
     if (Math.random() < 0.05) {
@@ -318,7 +257,6 @@ export class Ant {
       }
     }
 
-    // Sense pheromone underground and steer accordingly
     if (this.y >= GROUND_LEVEL) {
       const senseDist = 8;
       const la = this.angle - Math.PI / 3;
@@ -335,38 +273,22 @@ export class Ant {
       );
       const phDiff = leftPh - rightPh;
       if (this.hasDirt) {
-        // Returning: follow stronger pheromone (stick to known routes)
         this.angle -= phDiff * 0.3;
       } else {
-        // Exploring: slightly prefer weaker pheromone (seek uncharted areas)
         this.angle += phDiff * 0.1;
       }
 
-      // Deposit pheromone
       const deposit = this.hasDirt ? PHEROMONE_DEPOSIT_RETURN : PHEROMONE_DEPOSIT_EXPLORE;
       depositPheromone(this.x, this.y, this.z, deposit);
     }
 
-    // Agent-driven entrance creation: open a new entrance in isolated surface areas
-    if (!this.hasDirt && this.y < GROUND_LEVEL + 3 && this.wanderTimer <= 0 && Math.random() < 0.0003) {
-      const checkRadius = 35;
-      let hasNearbyOpening = false;
-      outer: for (let cx = Math.max(0, Math.floor(this.x - checkRadius)); cx <= Math.min(WIDTH - 1, Math.ceil(this.x + checkRadius)); cx += 3) {
-        for (let cy = GROUND_LEVEL; cy <= GROUND_LEVEL + PROTECTED_DEPTH + 2; cy++) {
-          const t = getGridType(cx, cy, this.z);
-          if (t === 0 || t === 1) { hasNearbyOpening = true; break outer; }
-        }
-      }
-      if (!hasNearbyOpening) {
-        makeDiggable(this.x, this.z, 4, PROTECTED_DEPTH + 1);
-      }
+    // Frustrated surface ants open a fresh entrance where they happen to be.
+    if (!this.hasDirt && this.y < GROUND_LEVEL && this.surfaceFrustration > 120) {
+      makeDiggable(this.x, this.z, 4, PROTECTED_DEPTH + 1);
+      this.surfaceFrustration = 0;
     }
 
-    if (this.y >= GROUND_LEVEL) {
-      this.angle += wrapAngle(this.wanderAngle - this.angle) * (this.hasDirt ? 0.12 : 0.03);
-    } else {
-      this.angle += (Math.random() - 0.5) * 0.2;
-    }
+    this.angle += wrapAngle(this.wanderAngle - this.angle) * (this.hasDirt ? 0.12 : 0.03);
 
     if (getGridType(this.x, this.y + 3, this.z) === 0) this.y += 0.5;
 
