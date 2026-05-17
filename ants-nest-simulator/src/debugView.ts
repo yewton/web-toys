@@ -20,41 +20,48 @@ const Z_RING = ['#6495ed', '#c8c8c8', '#ffd700'];
 
 // ─── PIXEL FILL ───────────────────────────────────────────────────────────────
 
-/** Grid cell colors only — no pheromone mixed in */
+// Excavation bitmask colours: index = bit2(back/z0) | bit1(mid/z1) | bit0(front/z2)
+const DIG_COLORS: readonly [number, number, number][] = [
+  [  0,   0,   0],  // 000 – all soil (unused; handled by soil branch)
+  [ 55, 190, 170],  // 001 – front only
+  [ 45, 130, 210],  // 010 – mid only
+  [ 55, 180, 200],  // 011 – front + mid
+  [ 25,  55, 140],  // 100 – back only
+  [ 45, 120, 175],  // 101 – back + front
+  [ 35,  90, 180],  // 110 – back + mid
+  [ 75, 205, 230],  // 111 – all layers
+];
+
+/** Grid cell colours with per-layer excavation bitmask */
 function fillGridPixels(data: Uint8ClampedArray): void {
   const { grids } = state;
 
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
       const idx = (y * WIDTH + x) * 4;
-
-      let maxType = 0;
-      let minType = 3;
-      for (let z = 0; z < DEPTH; z++) {
-        const cell = grids[z][y][x];
-        if (cell > maxType) maxType = cell;
-        if (cell < minType) minType = cell;
-      }
-
       let r: number, g: number, b: number;
-      if (maxType === 3) {
-        r = 130; g = 25; b = 25;
-      } else if (y >= GROUND_LEVEL && y < GROUND_LEVEL + PROTECTED_DEPTH) {
-        // Protected zone opened as entrance (type 3 → 0/1)
-        r = 60; g = 190; b = 80;
-      } else if (y >= GROUND_LEVEL && minType === 0) {
-        // At least one Z-layer excavated — slate-blue void
-        r = 35; g = 100; b = 150;
-      } else if (maxType === 1) {
-        const d = y / HEIGHT;
-        r = (105 + d * 45) | 0;
-        g = (62 + d * 28) | 0;
-        b = (22 + d * 18) | 0;
-      } else {
+
+      if (y < GROUND_LEVEL) {
         r = 10; g = 10; b = 24;
+      } else if (y < GROUND_LEVEL + PROTECTED_DEPTH) {
+        const allProtected = grids[0][y][x] === 3 && grids[1][y][x] === 3 && grids[2][y][x] === 3;
+        if (allProtected) { r = 130; g =  25; b =  25; }
+        else              { r =  60; g = 190; b =  80; }  // entrance
+      } else {
+        const mask = (grids[0][y][x] === 0 ? 4 : 0)
+                   | (grids[1][y][x] === 0 ? 2 : 0)
+                   | (grids[2][y][x] === 0 ? 1 : 0);
+        if (mask > 0) {
+          [r, g, b] = DIG_COLORS[mask];
+        } else {
+          const d = y / HEIGHT;
+          r = (105 + d * 45) | 0;
+          g = ( 62 + d * 28) | 0;
+          b = ( 22 + d * 18) | 0;
+        }
       }
 
-      data[idx] = r;
+      data[idx]     = r;
       data[idx + 1] = g;
       data[idx + 2] = b;
       data[idx + 3] = 255;
@@ -222,7 +229,13 @@ const LEGEND: [string, string][] = [
   ['#ff8c42', 'Carrying dirt'],
   ['#e8c040', 'Pheromone'],
   ['#ffd200', 'Ph pull → (dashed)'],
-  ['#236496', 'Tunnel (excavated)'],
+  ['#37beaa', 'Dig: F'],
+  ['#2d82d2', 'Dig: M'],
+  ['#19378c', 'Dig: B'],
+  ['#37b4c8', 'Dig: F+M'],
+  ['#2d78af', 'Dig: B+F'],
+  ['#235ab4', 'Dig: B+M'],
+  ['#4bcde6', 'Dig: all'],
   ['#7a5230', 'Soil'],
   ['#8c1e1e', 'Protected zone'],
   ['#3cbe50', 'Entrance'],
@@ -231,13 +244,30 @@ const LEGEND: [string, string][] = [
   ['#ffd700', 'Ring: Z front'],
 ];
 
+const _L = { px: 5, py: 5, w: 112, headerH: 14, lh: 12 };
+let _legendExpanded = true;
+
+export function toggleLegend(): void { _legendExpanded = !_legendExpanded; }
+
+export function hitTestLegend(cx: number, cy: number): boolean {
+  const h = _legendExpanded ? _L.headerH + LEGEND.length * _L.lh + 4 : _L.headerH;
+  return cx >= _L.px && cx <= _L.px + _L.w && cy >= _L.py && cy <= _L.py + h;
+}
+
 function drawLegend(ctx: CanvasRenderingContext2D): void {
-  const lh = 12, px = 5, py = 5;
+  const { px, py, w, headerH, lh } = _L;
+  const boxH = _legendExpanded ? headerH + LEGEND.length * lh + 4 : headerH;
+
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
-  ctx.fillRect(px, py, 112, LEGEND.length * lh + 8);
+  ctx.fillRect(px, py, w, boxH);
   ctx.font = '8px monospace';
+  ctx.fillStyle = '#aaaaaa';
+  ctx.fillText(`${_legendExpanded ? '▼' : '▶'} Legend`, px + 4, py + 10);
+
+  if (!_legendExpanded) return;
+
   LEGEND.forEach(([color, label], i) => {
-    const iy = py + 6 + i * lh;
+    const iy = py + headerH + 6 + i * lh;
     ctx.fillStyle = color;
     ctx.fillRect(px + 4, iy - 4, 7, 7);
     ctx.fillStyle = '#cccccc';

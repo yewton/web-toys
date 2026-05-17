@@ -2,6 +2,7 @@ import './style.css';
 import { WIDTH, HEIGHT } from './constants';
 import { state, type ViewMode } from './state';
 import { initSimulation, startLoop, advanceSimulation } from './simulation';
+import { toggleLegend, hitTestLegend } from './debugView';
 
 const canvas = document.getElementById('simCanvas') as HTMLCanvasElement;
 canvas.width = WIDTH;
@@ -40,6 +41,11 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const cx = (e.clientX - rect.left) * (WIDTH / rect.width);
   const cy = (e.clientY - rect.top) * (HEIGHT / rect.height);
+
+  if (state.viewMode === 'debug' && hitTestLegend(cx, cy)) {
+    toggleLegend();
+    return;
+  }
 
   let closest = null;
   let closestDist = HIGHLIGHT_RADIUS;
