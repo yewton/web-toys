@@ -5,7 +5,6 @@ import {
   HEIGHT,
   DEPTH,
   GROUND_LEVEL,
-  PROTECTED_DEPTH,
   PHEROMONE_DECAY,
   VOXEL_SIZE,
   GRID_WIDTH,
@@ -17,7 +16,7 @@ import {
   depositPheromone,
   getPheromone,
   evaporatePheromone,
-  makeDiggable,
+  openEntrance,
   digGel,
   dropDirtInside,
   fillDirt,
@@ -42,6 +41,7 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
     beginPath: () => {},
     arc: () => {},
     fill: () => {},
+    fillRect: () => {},
     fillStyle: '',
     globalCompositeOperation: 'source-over',
   };
@@ -88,8 +88,8 @@ describe('getGridType', () => {
   });
 
   it('returns the value written into voxel grid via pixel-coord lookup', () => {
-    state.grids[1][px2v(10)][px2v(20)] = 3;
-    expect(getGridType(20, 10, 1)).toBe(3);
+    state.grids[1][px2v(10)][px2v(20)] = 1;
+    expect(getGridType(20, 10, 1)).toBe(1);
   });
 
   it('returns 1 (wall) for negative z', () => {
@@ -133,13 +133,6 @@ describe('digGel', () => {
     state.grids[0][px2v(cy)][px2v(cx)] = 1;
     digGel(cx, cy, 0, 3);
     expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(0);
-  });
-
-  it('leaves protected voxels (type 3) unchanged', () => {
-    const cx = 40, cy = 80;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
-    digGel(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
   });
 
   it('does not affect voxels well outside the radius', () => {
@@ -191,9 +184,9 @@ describe('dropDirtInside', () => {
 
   it('does not overwrite non-empty voxels', () => {
     const cx = 60, cy = GROUND_LEVEL + 12;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
+    state.grids[0][px2v(cy)][px2v(cx)] = 2; // non-empty
     dropDirtInside(cx, cy, 0);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(2);
   });
 });
 
@@ -211,9 +204,9 @@ describe('fillDirt', () => {
 
   it('does not overwrite non-empty voxels', () => {
     const cx = 60, cy = 60;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
+    state.grids[0][px2v(cy)][px2v(cx)] = 2;
     fillDirt(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(2);
   });
 
   it('does not modify voxels well outside the radius', () => {
@@ -239,23 +232,12 @@ describe('dropDirt (simplified: stack above the column the ant is on)', () => {
     return false;
   }
 
-  it('places soil above a protected substrate at GROUND_LEVEL', () => {
+  it('places soil above a substrate at GROUND_LEVEL', () => {
     const z = 0;
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][groundVy][vx] = 3;
+    for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][groundVy][vx] = 1;
     const pre = new Set<number>();
-    dropDirt(WIDTH / 2, 0, z, 3);
-    expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
-  });
-
-  it('places soil above an existing soil surface', () => {
-    const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    const pre = new Set<number>();
-    for (let vx = 0; vx < GRID_WIDTH; vx++) {
-      state.grids[z][groundVy][vx] = 1;
-      pre.add(groundVy * GRID_WIDTH + vx);
-    }
+    for (let vx = 0; vx < GRID_WIDTH; vx++) pre.add(groundVy * GRID_WIDTH + vx);
     dropDirt(WIDTH / 2, 0, z, 3);
     expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
   });
@@ -364,62 +346,51 @@ describe('evaporatePheromone', () => {
   });
 });
 
-describe('makeDiggable', () => {
-  it('converts protected voxels (3) to gel (1) within the width', () => {
+describe('openEntrance', () => {
+  it('excavates soil (sets to 0) within the width', () => {
     const z = 0;
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
     for (let dvy = 0; dvy < 3; dvy++) {
-      state.grids[z][groundVy + dvy][px2v(50)] = 3;
+      state.grids[z][groundVy + dvy][px2v(50)] = 1;
     }
-    makeDiggable(50, z, 5, 8);
-    expect(state.grids[z][groundVy][px2v(50)]).toBe(1);
-  });
-
-  it('does not modify voxels that are not type 3', () => {
-    const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    state.grids[z][groundVy][px2v(50)] = 0;
-    makeDiggable(50, z, 5, 8);
+    openEntrance(50, z, 5, 8);
     expect(state.grids[z][groundVy][px2v(50)]).toBe(0);
   });
 
   it('ignores out-of-bounds z', () => {
-    expect(() => makeDiggable(50, -1, 5, 8)).not.toThrow();
-    expect(() => makeDiggable(50, DEPTH, 5, 8)).not.toThrow();
+    expect(() => openEntrance(50, -1, 5, 8)).not.toThrow();
+    expect(() => openEntrance(50, DEPTH, 5, 8)).not.toThrow();
   });
 
   it('handles width that extends past the grid edge', () => {
     const z = 0;
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
     for (let dvy = 0; dvy < 3; dvy++) {
-      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 3;
+      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 1;
     }
-    makeDiggable(2, z, 12, 8);
-    expect(state.grids[z][groundVy][0]).toBe(1);
+    openEntrance(2, z, 12, 8);
+    expect(state.grids[z][groundVy][0]).toBe(0);
   });
 });
 
 describe('attemptCreateNewEntrance', () => {
-  it('creates a diggable entrance when valid positions exist', () => {
+  it('creates an entrance when valid positions exist', () => {
     for (let z = 0; z < DEPTH; z++) {
       for (let vy = 0; vy < GRID_HEIGHT; vy++) {
         for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          state.grids[z][vy][vx] = 3;
+          state.grids[z][vy][vx] = 1;
         }
       }
     }
     attemptCreateNewEntrance();
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    const checkEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH + 4) / VOXEL_SIZE);
-    let hasDiggable = false;
+    let hasEntrance = false;
     outer: for (let z = 0; z < DEPTH; z++) {
-      for (let vy = groundVy; vy <= checkEnd; vy++) {
-        for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          if (state.grids[z][vy][vx] === 1) { hasDiggable = true; break outer; }
-        }
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        if (state.grids[z][groundVy][vx] === 0) { hasEntrance = true; break outer; }
       }
     }
-    expect(hasDiggable).toBe(true);
+    expect(hasEntrance).toBe(true);
   });
 
   it('does nothing when all positions have nearby openings', () => {

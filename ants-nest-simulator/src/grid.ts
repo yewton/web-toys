@@ -116,8 +116,7 @@ export function soilFillStyle(cy: number): string {
   const ratio = Math.max(0, Math.min(1, (cy - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL)));
   const g = Math.round(180 - (180 - 120) * ratio);
   const b = Math.round(255 - (255 - 230) * ratio);
-  const alpha = (0.35 + 0.10 * ratio).toFixed(2);
-  return `rgba(0, ${g}, ${b}, ${alpha})`;
+  return `rgb(0, ${g}, ${b})`;
 }
 
 /** Back-compat alias retained for external imports; same formula as soilFillStyle. */
@@ -243,9 +242,9 @@ export function evaporatePheromone(): void {
   }
 }
 
-/** Converts part of the protected layer (3) to diggable soil (1) to open an entrance.
+/** Excavates a small rectangle of soil to create an entrance.
  *  cx, width, depth are all in pixels. */
-export function makeDiggable(cx: number, z: number, width: number, depth: number): void {
+export function openEntrance(cx: number, z: number, width: number, depth: number): void {
   if (z < 0 || z >= DEPTH) return;
 
   const minVx = Math.max(0, Math.floor((cx - width) / VOXEL_SIZE_PX));
@@ -255,9 +254,15 @@ export function makeDiggable(cx: number, z: number, width: number, depth: number
 
   for (let vy = minVy; vy <= maxVy; vy++) {
     for (let vx = minVx; vx <= maxVx; vx++) {
-      if (state.grids[z][vy][vx] === 3) state.grids[z][vy][vx] = 1;
+      state.grids[z][vy][vx] = 0;
     }
   }
+
+  const ctx = state.soilCtxs[z];
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillRect(cx - width, GROUND_LEVEL, width * 2, depth);
+  ctx.restore();
 }
 
 /** Automatically generates a new entrance away from existing tunnel openings */
@@ -272,7 +277,7 @@ export function attemptCreateNewEntrance(): void {
       for (let checkY = GROUND_LEVEL; checkY <= GROUND_LEVEL + 15; checkY += VOXEL_SIZE_PX) {
         for (let z = 0; z < DEPTH; z++) {
           const t = getGridType(checkX, checkY, z);
-          if (t === 0 || t === 1) {
+          if (t === 0) {
             hasHoleNearby = true;
             break outer;
           }
@@ -287,7 +292,7 @@ export function attemptCreateNewEntrance(): void {
     const targetX = validXs[Math.floor(Math.random() * validXs.length)];
     const targetZ = Math.floor(Math.random() * DEPTH);
 
-    makeDiggable(targetX, targetZ, 5, PROTECTED_DEPTH + 1);
-    makeDiggable(targetX, (targetZ + 1) % DEPTH, 3, PROTECTED_DEPTH + 1);
+    openEntrance(targetX, targetZ, 5, PROTECTED_DEPTH + 1);
+    openEntrance(targetX, (targetZ + 1) % DEPTH, 3, PROTECTED_DEPTH + 1);
   }
 }

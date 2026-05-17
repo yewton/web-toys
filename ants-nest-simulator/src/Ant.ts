@@ -3,7 +3,7 @@ import {
   DIG_RADIUS_PX, DIG_REACH_PX,
   PHEROMONE_DEPOSIT_EXPLORE, PHEROMONE_DEPOSIT_RETURN,
 } from './constants';
-import { getGridType, digGel, dropDirtInside, dropDirt, dirtColor, depositPheromone, getPheromone, makeDiggable } from './grid';
+import { getGridType, digGel, dropDirtInside, dropDirt, dirtColor, depositPheromone, getPheromone, openEntrance } from './grid';
 
 function wrapAngle(diff: number): number {
   while (diff < -Math.PI) diff += Math.PI * 2;
@@ -76,8 +76,6 @@ export class Ant {
       // Ant got buried inside a surface mound — dig itself free.
       // (Volume from rescue digs is discarded, not added to carry.)
       digGel(this.x, this.y, this.z, 2.5);
-    } else if (currentGridType === 3) {
-      this.y -= 2.0;
     }
 
     this.angle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
@@ -141,9 +139,7 @@ export class Ant {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       const inWideSpace = this.y >= GROUND_LEVEL + 15 ? this.isWideSpace() : false;
 
-      if (this.y < GROUND_LEVEL + PROTECTED_DEPTH + 5) {
-        digProb = 0.8;
-      } else if (isDeadEnd) {
+      if (isDeadEnd) {
         digProb = 1.0;
       } else {
         digProb = 0.002 + depthRatio * 0.015;
@@ -155,7 +151,7 @@ export class Ant {
     if (digProb > 0 && Math.random() < digProb) {
       this.digOneCell();
     } else {
-      this.avoidObstacle(frontType, leftVal, rightVal);
+      this.avoidObstacle(leftVal, rightVal);
     }
   }
 
@@ -187,16 +183,10 @@ export class Ant {
     }
   }
 
-  private avoidObstacle(frontType: number, leftVal: number, rightVal: number): void {
+  private avoidObstacle(leftVal: number, rightVal: number): void {
     this.turnCount++;
 
-    if (frontType === 3 && this.y < GROUND_LEVEL + 30) {
-      if (!this.hasDirt) this.surfaceFrustration++;
-      const dir = Math.random() > 0.5 ? 0 : Math.PI;
-      this.angle = dir + (Math.random() - 0.5) * 0.4;
-      this.x += Math.cos(this.angle) * this.speed;
-      this.y += Math.sin(this.angle) * this.speed;
-    } else if (this.turnCount > 3) {
+    if (this.turnCount > 3) {
       this.angle += (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * (Math.PI / 2));
       this.turnCount = 0;
     } else {
@@ -303,7 +293,7 @@ export class Ant {
 
     // Frustrated surface ants open a fresh entrance where they happen to be.
     if (!this.hasDirt && this.y < GROUND_LEVEL && this.surfaceFrustration > 120) {
-      makeDiggable(this.x, this.z, 4, PROTECTED_DEPTH + 1);
+      openEntrance(this.x, this.z, 4, PROTECTED_DEPTH + 1);
       this.surfaceFrustration = 0;
     }
 
