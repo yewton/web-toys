@@ -77,16 +77,23 @@ function applyToVoxelCircle(
 export function digGel(cx: number, cy: number, z: number, radius: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  const ctx = state.soilCtxs[z];
   const dug = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
     if (state.grids[z][vy][vx] === 1) {
       state.grids[z][vy][vx] = 0;
-      ctx.clearRect(vx * VOXEL_SIZE_PX, vy * VOXEL_SIZE_PX, VOXEL_SIZE_PX, VOXEL_SIZE_PX);
       return true;
     }
     return false;
   });
 
+  if (dug > 0) {
+    const ctx = state.soilCtxs[z];
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   return dug;
 }
 
@@ -112,18 +119,22 @@ export const dirtFillStyle = soilFillStyle;
 export function dropDirtInside(cx: number, cy: number, z: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  const ctx = state.soilCtxs[z];
-  ctx.fillStyle = soilFillStyle();
   const placed = applyToVoxelCircle(cx, cy, DIG_RADIUS_PX, (vx, vy) => {
     if (vy * VOXEL_SIZE_PX < GROUND_LEVEL) return false;
     if (state.grids[z][vy][vx] === 0) {
       state.grids[z][vy][vx] = 1;
-      ctx.fillRect(vx * VOXEL_SIZE_PX, vy * VOXEL_SIZE_PX, VOXEL_SIZE_PX, VOXEL_SIZE_PX);
       return true;
     }
     return false;
   });
 
+  if (placed > 0) {
+    const ctx = state.soilCtxs[z];
+    ctx.fillStyle = soilFillStyle();
+    ctx.beginPath();
+    ctx.arc(cx, cy, DIG_RADIUS_PX, 0, Math.PI * 2);
+    ctx.fill();
+  }
   return placed;
 }
 
@@ -131,17 +142,21 @@ export function dropDirtInside(cx: number, cy: number, z: number): number {
 export function fillDirt(cx: number, cy: number, z: number, radius: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  const ctx = state.soilCtxs[z];
-  ctx.fillStyle = soilFillStyle();
   const placed = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
     if (state.grids[z][vy][vx] === 0) {
       state.grids[z][vy][vx] = 1;
-      ctx.fillRect(vx * VOXEL_SIZE_PX, vy * VOXEL_SIZE_PX, VOXEL_SIZE_PX, VOXEL_SIZE_PX);
       return true;
     }
     return false;
   });
 
+  if (placed > 0) {
+    const ctx = state.soilCtxs[z];
+    ctx.fillStyle = soilFillStyle();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
   return placed;
 }
 
