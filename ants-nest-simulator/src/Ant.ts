@@ -299,6 +299,10 @@ export class Ant {
   }
 
   updateAnimation(): void {
+    // Minimum distance the actual position must diverge from the drawn position
+    // before any visual update occurs. Suppresses spinning-in-place appearance.
+    const DRAW_THRESHOLD = 3.0;
+
     const dx = this.x - this.prevX;
     const dy = this.y - this.prevY;
 
@@ -310,7 +314,7 @@ export class Ant {
       this.accumDy += dy;
     }
 
-    if (Math.hypot(this.accumDx, this.accumDy) > 2.0) {
+    if (Math.hypot(this.accumDx, this.accumDy) > 3.0) {
       this.presentationTargetAngle = Math.atan2(this.accumDy, this.accumDx);
       this.accumDx = 0;
       this.accumDy = 0;
@@ -321,18 +325,24 @@ export class Ant {
 
     const drawDx = this.x - this.drawX;
     const drawDy = this.y - this.drawY;
+    const drawDist = Math.hypot(drawDx, drawDy);
 
-    if (Math.hypot(drawDx, drawDy) > 15) {
+    let stepDx = 0;
+    let stepDy = 0;
+
+    if (drawDist > 15) {
       this.drawX = this.x;
       this.drawY = this.y;
-    } else {
-      this.drawX += drawDx * 0.4;
-      this.drawY += drawDy * 0.4;
+      this.drawAngle = this.presentationTargetAngle;
+    } else if (drawDist > DRAW_THRESHOLD) {
+      stepDx = drawDx * 0.4;
+      stepDy = drawDy * 0.4;
+      this.drawX += stepDx;
+      this.drawY += stepDy;
+      this.drawAngle += wrapAngle(this.presentationTargetAngle - this.drawAngle) * 0.15;
     }
 
-    this.drawAngle += wrapAngle(this.presentationTargetAngle - this.drawAngle) * 0.15;
-
-    this.walkCycle += Math.hypot(drawDx * 0.4, drawDy * 0.4) * 0.6;
+    this.walkCycle += Math.hypot(stepDx, stepDy) * 0.6;
   }
 
   draw(ctx: CanvasRenderingContext2D, isHighlighted = false): void {
