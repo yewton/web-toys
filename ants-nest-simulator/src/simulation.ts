@@ -82,7 +82,9 @@ export function initSimulation(): void {
   // Shared y-axis color/alpha gradient, used at render time to tint each
   // per-Z soil mask. The alpha ramp (0.35 → 0.45) reproduces the original
   // "deeper voxels look more solid" depth cue without depending on the
-  // mask paint color.
+  // mask paint color. Painted over the full canvas (not just below ground)
+  // so surface-mound deposits above GROUND_LEVEL also receive a color —
+  // pixels above the gradient's anchor inherit the top stop's color.
   const gCanvas = document.createElement('canvas');
   gCanvas.width = WIDTH;
   gCanvas.height = HEIGHT;
@@ -91,7 +93,7 @@ export function initSimulation(): void {
   gradient.addColorStop(0, 'rgba(0, 180, 255, 0.35)');
   gradient.addColorStop(1, 'rgba(0, 120, 230, 0.45)');
   gCtx.fillStyle = gradient;
-  gCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
+  gCtx.fillRect(0, 0, WIDTH, HEIGHT);
   state.gradientCanvas = gCanvas;
 
   const cCanvas = document.createElement('canvas');
