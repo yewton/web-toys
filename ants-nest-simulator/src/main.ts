@@ -1,6 +1,6 @@
 import './style.css';
 import { WIDTH, HEIGHT } from './constants';
-import { state } from './state';
+import { state, type ViewMode } from './state';
 import { initSimulation, startLoop, advanceSimulation } from './simulation';
 
 const canvas = document.getElementById('simCanvas') as HTMLCanvasElement;
@@ -20,6 +20,19 @@ document.getElementById('simSpeed')!.addEventListener('input', (e) => {
 });
 
 document.getElementById('resetBtn')!.addEventListener('click', initSimulation);
+
+document.querySelectorAll('[data-view-mode]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const mode = (btn as HTMLElement).dataset.viewMode as ViewMode;
+    state.viewMode = mode;
+    document.querySelectorAll('[data-view-mode]').forEach((b) => {
+      const el = b as HTMLElement;
+      const active = b === btn;
+      el.classList.toggle('view-btn-active', active);
+      el.classList.toggle('view-btn-inactive', !active);
+    });
+  });
+});
 
 const HIGHLIGHT_RADIUS = 15;
 

@@ -1,5 +1,7 @@
 import type { Ant } from './Ant';
 
+export type ViewMode = 'normal' | 'debug' | 'overlay';
+
 export interface SimState {
   grids: Uint8Array[][];
   pheromone: Float32Array[];
@@ -9,6 +11,7 @@ export interface SimState {
   targetAntCount: number;
   simulationSpeed: number;
   highlightedAnt: Ant | null;
+  viewMode: ViewMode;
 }
 
 export const state: SimState = {
@@ -20,4 +23,5 @@ export const state: SimState = {
   targetAntCount: 50,
   simulationSpeed: 1,
   highlightedAnt: null,
+  viewMode: 'normal',
 };

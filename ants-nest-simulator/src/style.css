@@ -13,3 +13,19 @@ canvas {
     0 10px 25px rgba(0, 100, 200, 0.2),
     0 0 15px rgba(0, 200, 255, 0.4);
 }
+
+.view-btn-active {
+  background-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.view-btn-inactive {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+.view-btn-inactive:hover {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
