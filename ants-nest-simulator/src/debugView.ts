@@ -92,38 +92,16 @@ function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
 }
 
 /**
- * Composite pheromone onto ctx: circles (wide base) → blur passes → pulse + drift.
- * overlay=true uses additive blending so the glow punches through soil colours.
+ * Composite pheromone onto ctx: single pass, no blur.
+ * overlay=true uses additive blending so circles pop through soil colours.
  */
 function drawPheromoneLayer(ctx: CanvasRenderingContext2D, overlay = false): void {
   ensurePhCanvas();
   fillPheromoneCanvas(_phCtx!);
-
-  const now = Date.now();
-  const pulse = 0.72 + 0.28 * Math.sin(now / 550);
-  const drift = Math.sin(now / 1800) * 2;
-
   ctx.save();
-
-  if (overlay) {
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.55 * pulse;
-    ctx.filter = 'blur(8px)';
-    ctx.drawImage(_phCanvas!, drift, 0);
-    ctx.globalAlpha = 0.90 * pulse;
-    ctx.filter = 'blur(2px)';
-    ctx.drawImage(_phCanvas!, 0, 0);
-  } else {
-    // Wide haze — blur softens circle edges into a diffuse cloud
-    ctx.globalAlpha = 0.35 * pulse;
-    ctx.filter = 'blur(10px)';
-    ctx.drawImage(_phCanvas!, drift, 0);
-    // Glowing core — slight blur keeps edges smooth but preserves size
-    ctx.globalAlpha = 0.70 * pulse;
-    ctx.filter = 'blur(3px)';
-    ctx.drawImage(_phCanvas!, 0, 0);
-  }
-
+  if (overlay) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = overlay ? 0.85 : 0.72;
+  ctx.drawImage(_phCanvas!, 0, 0);
   ctx.restore();
 }
 
