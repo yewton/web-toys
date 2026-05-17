@@ -29,22 +29,24 @@ function fillGridPixels(data: Uint8ClampedArray): void {
       const idx = (y * WIDTH + x) * 4;
 
       let maxType = 0;
+      let minType = 3;
       for (let z = 0; z < DEPTH; z++) {
         const cell = grids[z][y][x];
         if (cell > maxType) maxType = cell;
+        if (cell < minType) minType = cell;
       }
 
       let r: number, g: number, b: number;
       if (maxType === 3) {
         r = 130; g = 25; b = 25;
+      } else if (y >= GROUND_LEVEL && minType === 0) {
+        // At least one Z-layer excavated — slate-blue void
+        r = 35; g = 100; b = 150;
       } else if (maxType === 1) {
         const d = y / HEIGHT;
         r = (105 + d * 45) | 0;
         g = (62 + d * 28) | 0;
         b = (22 + d * 18) | 0;
-      } else if (y >= GROUND_LEVEL) {
-        // Excavated tunnel — dark steel-blue, distinct from soil
-        r = 18; g = 50; b = 80;
       } else {
         r = 10; g = 10; b = 24;
       }
@@ -239,7 +241,7 @@ const LEGEND: [string, string][] = [
   ['#ff8c42', 'Carrying dirt'],
   ['#e8c040', 'Pheromone'],
   ['#ffd200', 'Ph pull → (dashed)'],
-  ['#123250', 'Tunnel (excavated)'],
+  ['#236496', 'Tunnel (excavated)'],
   ['#7a5230', 'Soil'],
   ['#8c1e1e', 'Protected zone'],
   ['#6495ed', 'Ring: Z back'],
