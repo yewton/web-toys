@@ -41,8 +41,7 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
 beforeEach(() => {
   state.grids = makeGrids();
   state.pheromone = makePheromone();
-  state.gelCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
-  state.dirtCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
+  state.soilCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
 });
 
 describe('dirtColor', () => {
@@ -116,14 +115,8 @@ describe('digGel', () => {
     expect(() => digGel(10, 10, DEPTH, 3)).not.toThrow();
   });
 
-  it('excavates gel cells (type 1) to air (0)', () => {
+  it('excavates soil cells (type 1) to air (0)', () => {
     state.grids[0][10][10] = 1;
-    digGel(10, 10, 0, 3);
-    expect(state.grids[0][10][10]).toBe(0);
-  });
-
-  it('excavates dirt cells (type 2) to air (0)', () => {
-    state.grids[0][10][10] = 2;
     digGel(10, 10, 0, 3);
     expect(state.grids[0][10][10]).toBe(0);
   });
@@ -148,9 +141,9 @@ describe('digGel', () => {
     expect(state.grids[0][0][0]).toBe(0); // center cell excavated
   });
 
-  it('excavates both gel and dirt cells in the same call', () => {
+  it('excavates multiple soil cells in the same call', () => {
     state.grids[0][10][9] = 1;
-    state.grids[0][10][11] = 2;
+    state.grids[0][10][11] = 1;
     digGel(10, 10, 0, 5);
     expect(state.grids[0][10][9]).toBe(0);
     expect(state.grids[0][10][11]).toBe(0);
@@ -193,16 +186,16 @@ describe('fillDirt', () => {
     expect(() => fillDirt(10, 10, DEPTH, 3)).not.toThrow();
   });
 
-  it('fills empty cells in radius with dirt (type 2)', () => {
+  it('fills empty cells in radius with soil (type 1)', () => {
     const cx = 50, cy = 50, radius = 3;
     fillDirt(cx, cy, 0, radius);
-    expect(state.grids[0][cy][cx]).toBe(2);
+    expect(state.grids[0][cy][cx]).toBe(1);
   });
 
   it('does not overwrite non-empty cells', () => {
-    state.grids[0][50][50] = 1;
+    state.grids[0][50][50] = 3;
     fillDirt(50, 50, 0, 3);
-    expect(state.grids[0][50][50]).toBe(1);
+    expect(state.grids[0][50][50]).toBe(3);
   });
 
   it('does not modify cells outside the radius', () => {
@@ -214,72 +207,90 @@ describe('fillDirt', () => {
 
   it('fills cells on all z layers correctly', () => {
     fillDirt(50, 50, 1, 3);
-    expect(state.grids[1][50][50]).toBe(2);
+    expect(state.grids[1][50][50]).toBe(1);
     expect(state.grids[0][50][50]).toBe(0); // other z layers untouched
   });
 });
 
 describe('dropDirt', () => {
-  function findDirt(z: number, yMin = 0, yMax = HEIGHT): boolean {
-    for (let x = 0; x < WIDTH; x++) {
+  function findSoil(z: number, yMin: number, yMax: number, xMin = 0, xMax = WIDTH): boolean {
+    for (let x = xMin; x < xMax; x++) {
       for (let y = yMin; y < yMax; y++) {
-        if (state.grids[z][y][x] === 2) return true;
+        if (state.grids[z][y][x] === 1) return true;
       }
     }
     return false;
   }
 
-  it('places dirt on a type-3 protected surface at GROUND_LEVEL', () => {
+  it('places soil on a type-3 protected surface at GROUND_LEVEL', () => {
     const z = 0;
     for (let x = 0; x < WIDTH; x++) {
       state.grids[z][GROUND_LEVEL][x] = 3;
     }
     dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
+    expect(findSoil(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
   });
 
-  it('places dirt on a type-1 gel surface at GROUND_LEVEL', () => {
+  it('places soil on a type-1 soil surface at GROUND_LEVEL', () => {
     const z = 0;
+    // Track which cells were pre-seeded so we can ignore them when looking for new fill.
+    const preExisting = new Set<number>();
     for (let x = 0; x < WIDTH; x++) {
       state.grids[z][GROUND_LEVEL][x] = 1;
+      preExisting.add(GROUND_LEVEL * WIDTH + x);
     }
     dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
-  });
-
-  it('places dirt on existing type-2 mound at the surface', () => {
-    const z = 0;
+    let foundNew = false;
     for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][GROUND_LEVEL][x] = 2;
+      for (let y = GROUND_LEVEL - 6; y < GROUND_LEVEL; y++) {
+        if (state.grids[z][y][x] === 1 && !preExisting.has(y * WIDTH + x)) {
+          foundNew = true;
+        }
+      }
     }
-    dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
+    expect(foundNew).toBe(true);
   });
 
   it('discards the dirt on a fully empty grid', () => {
     const z = 0;
     dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z)).toBe(false);
+    expect(findSoil(z, 0, HEIGHT)).toBe(false);
   });
 
   it('discards the dirt when the only solid sits deep below the surface (looks like tunnel interior)', () => {
     const z = 0;
+    const preExisting = new Set<number>();
     for (let x = 0; x < WIDTH; x++) {
       state.grids[z][HEIGHT - 1][x] = 1;
+      preExisting.add((HEIGHT - 1) * WIDTH + x);
     }
     dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z)).toBe(false);
+    let foundNew = false;
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = 0; y < HEIGHT; y++) {
+        if (state.grids[z][y][x] === 1 && !preExisting.has(y * WIDTH + x)) {
+          foundNew = true;
+        }
+      }
+    }
+    expect(foundNew).toBe(false);
   });
 
-  it('does not pile dirt above the mound height cap (y < 20)', () => {
+  it('does not pile soil above the mound height cap (y < 20)', () => {
     const z = 0;
+    const preExisting = new Set<number>();
     for (let x = 0; x < WIDTH; x++) {
       for (let y = 20; y < HEIGHT; y++) {
-        state.grids[z][y][x] = 2;
+        state.grids[z][y][x] = 1;
+        preExisting.add(y * WIDTH + x);
       }
     }
     dropDirt(WIDTH / 2, 0, z);
-    expect(findDirt(z, 0, 20)).toBe(false);
+    for (let x = 0; x < WIDTH; x++) {
+      for (let y = 0; y < 20; y++) {
+        expect(state.grids[z][y][x]).toBe(0);
+      }
+    }
   });
 });
 

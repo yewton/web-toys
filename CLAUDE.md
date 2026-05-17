@@ -55,12 +55,12 @@ CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` →
 
 ### ants-nest-simulator
 
-- **`state.ts`** — singleton holding all mutable simulation state: `grids` (3D cell array), `pheromone` (Float32Array per layer), `gelCtxs`/`dirtCtxs` (canvas 2D contexts for rendering soil layers), `ants` array, and slider values
+- **`state.ts`** — singleton holding all mutable simulation state: `grids` (3D cell array), `pheromone` (Float32Array per layer), `soilCtxs` (one canvas 2D context per Z layer for rendering soil), `ants` array, and slider values
 - **`grid.ts`** — all grid read/write functions. Exported functions are the only way to modify `state.grids` and `state.pheromone` from outside this module
 - **`Ant.ts`** — `Ant` class with `update()` (simulation logic) and `draw()` (canvas rendering) methods. `update()` calls grid functions; `draw()` requires a canvas context
 - **`simulation.ts`** — core render loop. Composites the layered grid (WIDTH × HEIGHT × DEPTH, where DEPTH=3) back-to-front to create a depth effect. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests.
 
-Grid cell values: `0` = air, `1` = diggable soil (gel), `2` = loose dirt (deposited by ants above ground), `3` = protected zone (not diggable).
+Grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). All soil paints use `soilFillStyle(y)`, the same gradient ramp as the initial fill, so deposits and substrate blend seamlessly on the canvas.
 
 ### solitaire-cascade
 
@@ -73,7 +73,7 @@ Grid cell values: `0` = air, `1` = diggable soil (gel), `2` = loose dirt (deposi
 
 Tests live in `src/__tests__/*.test.ts` inside each app directory. The test environment is `node` (no DOM).
 
-**Canvas mock pattern** — functions that call `CanvasRenderingContext2D` methods are tested by injecting a minimal no-op object into `state.gelCtxs`/`state.dirtCtxs` (for grid functions) or by passing a mock ctx directly to `draw()`:
+**Canvas mock pattern** — functions that call `CanvasRenderingContext2D` methods are tested by injecting a minimal no-op object into `state.soilCtxs` (for grid functions) or by passing a mock ctx directly to `draw()`:
 
 ```ts
 function makeCanvasCtx(): CanvasRenderingContext2D {

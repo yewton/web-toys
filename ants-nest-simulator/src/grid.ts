@@ -1,6 +1,13 @@
 import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH, PHEROMONE_DECAY } from './constants';
 import { state } from './state';
 
+/**
+ * Cell values:
+ *   0 = air
+ *   1 = soil (diggable — covers both original substrate and ant-deposited material)
+ *   3 = protected (not diggable; pinned topsoil)
+ */
+
 /** Returns the cell type at (x, y, z); out-of-bounds is treated as wall (1) */
 export function getGridType(x: number, y: number, z: number): number {
   if (z < 0 || z >= DEPTH) return 1;
@@ -11,12 +18,11 @@ export function getGridType(x: number, y: number, z: number): number {
   return state.grids[z][gy][gx];
 }
 
-/** Excavates gel (1) or dirt (2) in a circle centered at (cx, cy) */
+/** Excavates diggable soil (1) in a circle centered at (cx, cy) */
 export function digGel(cx: number, cy: number, z: number, radius: number): void {
   if (z < 0 || z >= DEPTH) return;
 
-  let dugGel = false;
-  let dugDirt = false;
+  let dug = false;
 
   for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
     for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
@@ -24,33 +30,21 @@ export function digGel(cx: number, cy: number, z: number, radius: number): void 
         if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) {
           if (state.grids[z][y][x] === 1) {
             state.grids[z][y][x] = 0;
-            dugGel = true;
-          } else if (state.grids[z][y][x] === 2) {
-            state.grids[z][y][x] = 0;
-            dugDirt = true;
+            dug = true;
           }
         }
       }
     }
   }
 
-  if (dugGel) {
-    const gCtx = state.gelCtxs[z];
-    gCtx.save();
-    gCtx.globalCompositeOperation = 'destination-out';
-    gCtx.beginPath();
-    gCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-    gCtx.fill();
-    gCtx.restore();
-  }
-  if (dugDirt) {
-    const dCtx = state.dirtCtxs[z];
-    dCtx.save();
-    dCtx.globalCompositeOperation = 'destination-out';
-    dCtx.beginPath();
-    dCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-    dCtx.fill();
-    dCtx.restore();
+  if (dug) {
+    const ctx = state.soilCtxs[z];
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -61,8 +55,12 @@ export function dirtColor(cy: number): string {
   return `${g}, ${b}`;
 }
 
-/** Returns the full rgba fill matching the gel gradient at depth cy */
-export function dirtFillStyle(cy: number): string {
+/**
+ * Soil fill at depth cy, sampled from the same gradient ramp the initial fill uses.
+ * Using one formula for both initial substrate and ant-deposited material is what
+ * lets the two blend seamlessly on the canvas.
+ */
+export function soilFillStyle(cy: number): string {
   const ratio = Math.max(0, Math.min(1, (cy - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL)));
   const g = Math.round(180 - (180 - 120) * ratio);
   const b = Math.round(255 - (255 - 230) * ratio);
@@ -70,7 +68,10 @@ export function dirtFillStyle(cy: number): string {
   return `rgba(0, ${g}, ${b}, ${alpha})`;
 }
 
-/** Drops a small dirt clump underground (simulates loose fill after digging) */
+/** Back-compat alias retained for external imports; same formula as soilFillStyle. */
+export const dirtFillStyle = soilFillStyle;
+
+/** Drops a small soil clump underground (loose fill after digging) */
 export function dropDirtInside(cx: number, cy: number, z: number): void {
   if (z < 0 || z >= DEPTH) return;
   const radius = 1.5 + Math.random();
@@ -87,15 +88,15 @@ export function dropDirtInside(cx: number, cy: number, z: number): void {
     }
   }
 
-  const gCtx = state.gelCtxs[z];
-  gCtx.globalCompositeOperation = 'source-over';
-  gCtx.fillStyle = dirtFillStyle(cy);
-  gCtx.beginPath();
-  gCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-  gCtx.fill();
+  const ctx = state.soilCtxs[z];
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = soilFillStyle(cy);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-/** Fills empty cells with dirt (2) and updates the render layer */
+/** Fills empty cells with soil and paints into the unified soil canvas */
 export function fillDirt(cx: number, cy: number, z: number, radius: number): void {
   if (z < 0 || z >= DEPTH) return;
 
@@ -104,18 +105,19 @@ export function fillDirt(cx: number, cy: number, z: number, radius: number): voi
       if (y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH) {
         if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) {
           if (state.grids[z][y][x] === 0) {
-            state.grids[z][y][x] = 2;
+            state.grids[z][y][x] = 1;
           }
         }
       }
     }
   }
 
-  const dCtx = state.dirtCtxs[z];
-  dCtx.fillStyle = dirtFillStyle(cy);
-  dCtx.beginPath();
-  dCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-  dCtx.fill();
+  const ctx = state.soilCtxs[z];
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = soilFillStyle(cy);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 /** Visible mound may not appear above this Y. Leaves y=0..MOUND_TOP_LIMIT clear for surface ants. */
@@ -125,7 +127,7 @@ const MOUND_MIN_SCAN_Y = MOUND_TOP_LIMIT + 5;
 /** Reject scans that fall deep below the surface — those are tunnel interiors, not the surface edge. */
 const MOUND_MAX_SCAN_Y = GROUND_LEVEL + 10;
 
-/** Drops ant-carried dirt near the surface. Skips the drop if all candidate columns have piled past the cap. */
+/** Drops ant-carried soil near the surface. Skips the drop if all candidate columns have piled past the cap. */
 export function dropDirt(x: number, y: number, z: number): void {
   let dropX = x;
   let targetY = -1;
@@ -140,7 +142,7 @@ export function dropDirt(x: number, y: number, z: number): void {
       if (hitType > 0) break;
     }
 
-    // Accept any solid (gel/dirt/protected) at the surface edge; reject deep hits (tunnel interior).
+    // Accept any solid (soil/protected) at the surface edge; reject deep hits (tunnel interior).
     if (hitType > 0 && scanY >= MOUND_MIN_SCAN_Y && scanY <= MOUND_MAX_SCAN_Y) {
       dropX = candidateX;
       targetY = scanY;
@@ -184,7 +186,7 @@ export function evaporatePheromone(): void {
   }
 }
 
-/** Converts part of the protected layer (3) to diggable gel (1) to open an entrance */
+/** Converts part of the protected layer (3) to diggable soil (1) to open an entrance */
 export function makeDiggable(cx: number, z: number, width: number, depth: number): void {
   if (z < 0 || z >= DEPTH) return;
 
