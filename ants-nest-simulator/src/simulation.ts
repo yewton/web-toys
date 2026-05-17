@@ -33,10 +33,8 @@ function renderNormal(ctx: CanvasRenderingContext2D): void {
     // Composite soil using the mask
     offscreenCtx.clearRect(0, 0, WIDTH, HEIGHT);
 
-    // Draw the small voxel mask scaled up.
-    // Linear interpolation provides natural smoothing.
-    offscreenCtx.imageSmoothingEnabled = true;
-    offscreenCtx.drawImage(soilCanvases[z], 0, 0, WIDTH, HEIGHT);
+    // Draw the full-resolution mask directly
+    offscreenCtx.drawImage(soilCanvases[z], 0, 0);
 
     offscreenCtx.globalCompositeOperation = 'source-in';
     offscreenCtx.drawImage(gradientCanvas, 0, 0);
@@ -100,10 +98,10 @@ export function initSimulation(): void {
     state.grids[z] = Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH));
     state.pheromone.push(new Float32Array(GRID_WIDTH * GRID_HEIGHT));
 
-    // Initialize soil mask at VOXEL resolution
+    // Initialize soil mask at full resolution
     const sCanvas = document.createElement('canvas');
-    sCanvas.width = GRID_WIDTH;
-    sCanvas.height = GRID_HEIGHT;
+    sCanvas.width = WIDTH;
+    sCanvas.height = HEIGHT;
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true })!;
 
     for (let vy = 0; vy < GRID_HEIGHT; vy++) {
@@ -113,9 +111,9 @@ export function initSimulation(): void {
         }
       }
     }
-    // Fill initial mask (voxel coordinates)
+    // Fill initial mask
     sCtx.fillStyle = 'white';
-    sCtx.fillRect(0, groundVy, GRID_WIDTH, GRID_HEIGHT - groundVy);
+    sCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
 
     state.soilCanvases.push(sCanvas);
     state.soilCtxs.push(sCtx);
