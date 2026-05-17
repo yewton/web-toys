@@ -1,6 +1,6 @@
 import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL } from './constants';
 import { state } from './state';
-import { getGridType } from './grid';
+import { getGridType, getPheromone } from './grid';
 
 // Cached across frames to reduce GC pressure
 let _gridImgData: ImageData | null = null;
@@ -88,9 +88,9 @@ function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
 
 /**
  * Composite pheromone onto ctx: circles (wide base) → blur passes → pulse + drift.
- * Two passes: a wide hazy bloom and a tighter glowing core.
+ * overlay=true uses additive blending so the glow punches through soil colours.
  */
-function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
+function drawPheromoneLayer(ctx: CanvasRenderingContext2D, overlay = false): void {
   ensurePhCanvas();
   fillPheromoneCanvas(_phCtx!);
 
@@ -100,15 +100,24 @@ function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
 
   ctx.save();
 
-  // Wide haze — blur softens circle edges into a diffuse cloud
-  ctx.globalAlpha = 0.35 * pulse;
-  ctx.filter = 'blur(10px)';
-  ctx.drawImage(_phCanvas!, drift, 0);
-
-  // Glowing core — slight blur keeps edges smooth but preserves size
-  ctx.globalAlpha = 0.70 * pulse;
-  ctx.filter = 'blur(3px)';
-  ctx.drawImage(_phCanvas!, 0, 0);
+  if (overlay) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.55 * pulse;
+    ctx.filter = 'blur(8px)';
+    ctx.drawImage(_phCanvas!, drift, 0);
+    ctx.globalAlpha = 0.90 * pulse;
+    ctx.filter = 'blur(2px)';
+    ctx.drawImage(_phCanvas!, 0, 0);
+  } else {
+    // Wide haze — blur softens circle edges into a diffuse cloud
+    ctx.globalAlpha = 0.35 * pulse;
+    ctx.filter = 'blur(10px)';
+    ctx.drawImage(_phCanvas!, drift, 0);
+    // Glowing core — slight blur keeps edges smooth but preserves size
+    ctx.globalAlpha = 0.70 * pulse;
+    ctx.filter = 'blur(3px)';
+    ctx.drawImage(_phCanvas!, 0, 0);
+  }
 
   ctx.restore();
 }
@@ -118,12 +127,49 @@ function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
 function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
   const SENSOR_DIST = 6;
   const ARROW_LEN = 15;
+  const PH_SENSOR_DIST = 8;
 
   for (const ant of state.ants) {
     const { drawX: ax, drawY: ay, angle, wanderAngle, hasDirt, z } = ant;
     const sc = hasDirt ? '#ff8c42' : '#50c878';
 
     ctx.save();
+
+    // Pheromone influence arrow — underground ants only
+    if (ay >= GROUND_LEVEL) {
+      const la = angle - Math.PI / 3;
+      const ra = angle + Math.PI / 3;
+      const leftPh = getPheromone(ax + Math.cos(la) * PH_SENSOR_DIST, ay + Math.sin(la) * PH_SENSOR_DIST, z);
+      const rightPh = getPheromone(ax + Math.cos(ra) * PH_SENSOR_DIST, ay + Math.sin(ra) * PH_SENSOR_DIST, z);
+      const totalPh = leftPh + rightPh;
+      if (totalPh > 0.001) {
+        // Weighted net direction of the pheromone field
+        const nx = (Math.cos(la) * leftPh + Math.cos(ra) * rightPh) / totalPh;
+        const ny = (Math.sin(la) * leftPh + Math.sin(ra) * rightPh) / totalPh;
+        // Dirt carriers attracted (+1), explorers repelled (-1)
+        const sign = hasDirt ? 1 : -1;
+        const strength = Math.min(1, totalPh * 40);
+        const len = strength * 14 + 4;
+        const ex = ax + sign * nx * len;
+        const ey = ay + sign * ny * len;
+        const ha = Math.atan2(ey - ay, ex - ax);
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = 'rgba(255,210,0,0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,210,0,0.9)';
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - Math.cos(ha - 0.4) * 4, ey - Math.sin(ha - 0.4) * 4);
+        ctx.lineTo(ex - Math.cos(ha + 0.4) * 4, ey - Math.sin(ha + 0.4) * 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
 
     // Direction arrow
     const tx = ax + Math.cos(angle) * ARROW_LEN;
@@ -189,6 +235,7 @@ const LEGEND: [string, string][] = [
   ['#50c878', 'Exploring'],
   ['#ff8c42', 'Carrying dirt'],
   ['#e8c040', 'Pheromone'],
+  ['#ffd200', 'Ph pull → (dashed)'],
   ['#7a5230', 'Soil'],
   ['#8c1e1e', 'Protected zone'],
   ['#6495ed', 'Ring: Z back'],
@@ -255,5 +302,5 @@ export function drawDebugOverlay(ctx: CanvasRenderingContext2D): void {
   ctx.globalAlpha = 0.8;
   drawAnts(ctx, false);
   ctx.restore();
-  drawPheromoneLayer(ctx);   // ← after ants so pheromone is never hidden
+  drawPheromoneLayer(ctx, true);   // overlay=true: additive blend, punches through soil
 }
