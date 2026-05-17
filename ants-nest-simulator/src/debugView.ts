@@ -42,7 +42,18 @@ function fillGridPixels(data: Uint8ClampedArray): void {
       let r: number, g: number, b: number;
 
       if (y < GROUND_LEVEL) {
-        r = 10; g = 10; b = 24;
+        // Above ground: type-1 cells are ant-deposited mound material.
+        // Render them with the same brown ramp as substrate so the debug view
+        // matches the model's unified soil semantics.
+        const hasMound = grids[0][y][x] === 1 || grids[1][y][x] === 1 || grids[2][y][x] === 1;
+        if (hasMound) {
+          const d = y / HEIGHT;
+          r = (105 + d * 45) | 0;
+          g = ( 62 + d * 28) | 0;
+          b = ( 22 + d * 18) | 0;
+        } else {
+          r = 10; g = 10; b = 24;
+        }
       } else if (y < GROUND_LEVEL + PROTECTED_DEPTH) {
         const allProtected = grids[0][y][x] === 3 && grids[1][y][x] === 3 && grids[2][y][x] === 3;
         if (allProtected) { r = 130; g =  25; b =  25; }
