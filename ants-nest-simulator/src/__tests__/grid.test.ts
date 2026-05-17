@@ -1,28 +1,31 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from '../state';
 import {
-  WIDTH,
-  HEIGHT,
   DEPTH,
-  GROUND_LEVEL,
-  PROTECTED_DEPTH,
   PHEROMONE_DECAY,
-  VOXEL_SIZE,
   GRID_WIDTH,
   GRID_HEIGHT,
 } from '../constants';
 import {
-  dirtColor,
-  getGridType,
+  AIR,
+  SOIL_DIGGABLE,
+  SOIL_PROTECTED,
+  CARDINAL_OFFSETS,
+  getVoxel,
+  isAir,
+  isSoil,
+  hasCardinalSoilNeighbour,
+  canStandAt,
+  digVoxel,
+  placeVoxel,
   depositPheromone,
   getPheromone,
   evaporatePheromone,
   makeDiggable,
-  digGel,
-  dropDirtInside,
-  fillDirt,
-  dropDirt,
-  attemptCreateNewEntrance,
+  initialAirEndVy,
+  initialProtectedEndVy,
+  pixelToVoxel,
+  voxelCentrePx,
 } from '../grid';
 
 function makeGrids() {
@@ -49,256 +52,155 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
   return ctx as unknown as CanvasRenderingContext2D;
 }
 
-/** Helpers: convert pixel → voxel for setting/reading grid cells in tests. */
-const px2v = (p: number) => Math.floor(p / VOXEL_SIZE);
-
 beforeEach(() => {
   state.grids = makeGrids();
   state.pheromone = makePheromone();
   state.soilCtxs = Array.from({ length: DEPTH }, makeCanvasCtx);
 });
 
-describe('dirtColor', () => {
-  it('returns a string with two comma-separated numbers', () => {
-    const result = dirtColor(GROUND_LEVEL);
-    expect(result).toMatch(/^\d+, \d+$/);
+describe('getVoxel', () => {
+  it('returns AIR for an unset cell', () => {
+    expect(getVoxel(0, 0, 0)).toBe(AIR);
   });
 
-  it('returns green channel 180 at ground level', () => {
-    const [g] = dirtColor(GROUND_LEVEL).split(', ').map(Number);
-    expect(g).toBe(180);
+  it('returns the value stored in the grid', () => {
+    state.grids[1][10][20] = SOIL_PROTECTED;
+    expect(getVoxel(20, 10, 1)).toBe(SOIL_PROTECTED);
   });
 
-  it('returns green channel 120 at bottom of grid', () => {
-    const [g] = dirtColor(HEIGHT).split(', ').map(Number);
-    expect(g).toBe(120);
+  it('reports out-of-bounds Z as undiggable soil (3)', () => {
+    expect(getVoxel(5, 5, -1)).toBe(SOIL_PROTECTED);
+    expect(getVoxel(5, 5, DEPTH)).toBe(SOIL_PROTECTED);
   });
 
-  it('clamps above HEIGHT to the same as HEIGHT', () => {
-    expect(dirtColor(HEIGHT + 100)).toBe(dirtColor(HEIGHT));
-  });
-
-  it('clamps below GROUND_LEVEL to the same as GROUND_LEVEL', () => {
-    expect(dirtColor(GROUND_LEVEL - 10)).toBe(dirtColor(GROUND_LEVEL));
+  it('reports out-of-bounds X/Y as undiggable soil (3)', () => {
+    expect(getVoxel(-1, 0, 0)).toBe(SOIL_PROTECTED);
+    expect(getVoxel(GRID_WIDTH, 0, 0)).toBe(SOIL_PROTECTED);
+    expect(getVoxel(0, -1, 0)).toBe(SOIL_PROTECTED);
+    expect(getVoxel(0, GRID_HEIGHT, 0)).toBe(SOIL_PROTECTED);
   });
 });
 
-describe('getGridType', () => {
-  it('returns 0 for empty (default) cell', () => {
-    expect(getGridType(0, 0, 0)).toBe(0);
+describe('isAir / isSoil', () => {
+  it('isAir is true only for AIR; OOB is not air', () => {
+    expect(isAir(0, 0, 0)).toBe(true);
+    state.grids[0][0][0] = SOIL_DIGGABLE;
+    expect(isAir(0, 0, 0)).toBe(false);
+    expect(isAir(-1, 0, 0)).toBe(false);
   });
 
-  it('returns the value written into voxel grid via pixel-coord lookup', () => {
-    state.grids[1][px2v(10)][px2v(20)] = 3;
-    expect(getGridType(20, 10, 1)).toBe(3);
-  });
-
-  it('returns 1 (wall) for negative z', () => {
-    expect(getGridType(5, 5, -1)).toBe(1);
-  });
-
-  it('returns 1 (wall) for z >= DEPTH', () => {
-    expect(getGridType(5, 5, DEPTH)).toBe(1);
-  });
-
-  it('returns 1 (wall) for x < 0', () => {
-    expect(getGridType(-1, 5, 0)).toBe(1);
-  });
-
-  it('returns 1 (wall) for x >= WIDTH', () => {
-    expect(getGridType(WIDTH, 5, 0)).toBe(1);
-  });
-
-  it('returns 1 (wall) for y >= HEIGHT', () => {
-    expect(getGridType(5, HEIGHT, 0)).toBe(1);
-  });
-
-  it('returns 0 (open) for y < 0', () => {
-    expect(getGridType(5, -1, 0)).toBe(0);
-  });
-
-  it('maps fractional pixel coordinates to their voxel', () => {
-    state.grids[0][px2v(3.9)][px2v(7.9)] = 2;
-    expect(getGridType(7.9, 3.9, 0)).toBe(2);
+  it('isSoil is the inverse of isAir for in-bounds voxels and true for OOB', () => {
+    expect(isSoil(0, 0, 0)).toBe(false);
+    state.grids[0][0][0] = SOIL_DIGGABLE;
+    expect(isSoil(0, 0, 0)).toBe(true);
+    expect(isSoil(-1, 0, 0)).toBe(true);
   });
 });
 
-describe('digGel', () => {
-  it('ignores out-of-bounds z', () => {
-    expect(() => digGel(10, 10, -1, 3)).not.toThrow();
-    expect(() => digGel(10, 10, DEPTH, 3)).not.toThrow();
+describe('hasCardinalSoilNeighbour / canStandAt', () => {
+  it('an isolated air voxel surrounded by air has no soil neighbour', () => {
+    expect(hasCardinalSoilNeighbour(50, 50, 1)).toBe(false);
   });
 
-  it('excavates the voxel containing the circle center', () => {
-    const cx = 40, cy = 80; // voxel (10, 20)
-    state.grids[0][px2v(cy)][px2v(cx)] = 1;
-    digGel(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(0);
+  it('an air voxel adjacent to a soil voxel is stand-valid', () => {
+    state.grids[0][10][10] = SOIL_DIGGABLE;
+    expect(canStandAt(11, 10, 0)).toBe(true);
   });
 
-  it('leaves protected voxels (type 3) unchanged', () => {
-    const cx = 40, cy = 80;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
-    digGel(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
+  it('air voxels at the world edge are stand-valid because OOB counts as soil', () => {
+    expect(canStandAt(0, 0, 0)).toBe(true);
+    expect(canStandAt(GRID_WIDTH - 1, GRID_HEIGHT - 1, 0)).toBe(true);
   });
 
-  it('does not affect voxels well outside the radius', () => {
-    const far = 30; // 30 voxels away in x — well past any reasonable radius
-    state.grids[0][20][far] = 1;
-    digGel(40, 80, 0, 3);
-    expect(state.grids[0][20][far]).toBe(1);
+  it('canStandAt is false for a soil voxel itself', () => {
+    state.grids[0][10][10] = SOIL_DIGGABLE;
+    expect(canStandAt(10, 10, 0)).toBe(false);
   });
 
-  it('handles a circle that overflows the grid edge', () => {
-    state.grids[0][0][0] = 1;
-    digGel(0, 0, 0, 3);
-    expect(state.grids[0][0][0]).toBe(0);
+  it('OOB voxels can never be stood in (they are soil-typed)', () => {
+    expect(canStandAt(-1, 0, 0)).toBe(false);
   });
 
-  it('excavates multiple voxels for a larger radius', () => {
-    const cx = 40, cy = 80;
-    // Seed a 3-voxel-wide band
-    for (let dvx = -2; dvx <= 2; dvx++) {
-      state.grids[0][px2v(cy)][px2v(cx) + dvx] = 1;
-    }
-    digGel(cx, cy, 0, 8); // 2 voxels radius
-    expect(state.grids[0][px2v(cy)][px2v(cx) - 1]).toBe(0);
-    expect(state.grids[0][px2v(cy)][px2v(cx) + 1]).toBe(0);
-  });
-});
-
-describe('dropDirtInside', () => {
-  it('ignores out-of-bounds z', () => {
-    expect(() => dropDirtInside(50, GROUND_LEVEL + 10, -1)).not.toThrow();
-    expect(() => dropDirtInside(50, GROUND_LEVEL + 10, DEPTH)).not.toThrow();
-  });
-
-  it('places soil in empty voxels at or below GROUND_LEVEL', () => {
-    const cx = 60, cy = GROUND_LEVEL + 12;
-    dropDirtInside(cx, cy, 0);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(1);
-  });
-
-  it('does not modify voxels above GROUND_LEVEL', () => {
-    dropDirtInside(60, GROUND_LEVEL - 20, 0);
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    for (let vy = 0; vy < groundVy; vy++) {
-      for (let vx = 0; vx < GRID_WIDTH; vx++) {
-        expect(state.grids[0][vy][vx]).toBe(0);
-      }
+  it('all 6 cardinal offsets are unit cardinal vectors', () => {
+    expect(CARDINAL_OFFSETS).toHaveLength(6);
+    for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
+      expect(Math.abs(dx) + Math.abs(dy) + Math.abs(dz)).toBe(1);
     }
   });
+});
 
-  it('does not overwrite non-empty voxels', () => {
-    const cx = 60, cy = GROUND_LEVEL + 12;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
-    dropDirtInside(cx, cy, 0);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
+describe('digVoxel', () => {
+  it('removes a diggable soil voxel and returns true', () => {
+    state.grids[0][10][10] = SOIL_DIGGABLE;
+    expect(digVoxel(10, 10, 0)).toBe(true);
+    expect(state.grids[0][10][10]).toBe(AIR);
+  });
+
+  it('does not touch protected voxels and returns false', () => {
+    state.grids[0][10][10] = SOIL_PROTECTED;
+    expect(digVoxel(10, 10, 0)).toBe(false);
+    expect(state.grids[0][10][10]).toBe(SOIL_PROTECTED);
+  });
+
+  it('does nothing when the voxel is already air', () => {
+    expect(digVoxel(10, 10, 0)).toBe(false);
+  });
+
+  it('ignores out-of-bounds coordinates', () => {
+    expect(digVoxel(-1, 0, 0)).toBe(false);
+    expect(digVoxel(0, 0, -1)).toBe(false);
+    expect(digVoxel(GRID_WIDTH, 0, 0)).toBe(false);
   });
 });
 
-describe('fillDirt', () => {
-  it('ignores out-of-bounds z', () => {
-    expect(() => fillDirt(40, 80, -1, 3)).not.toThrow();
-    expect(() => fillDirt(40, 80, DEPTH, 3)).not.toThrow();
+describe('placeVoxel', () => {
+  it('fills an air voxel with diggable soil and returns true', () => {
+    expect(placeVoxel(10, 10, 0)).toBe(true);
+    expect(state.grids[0][10][10]).toBe(SOIL_DIGGABLE);
   });
 
-  it('fills empty voxels in radius with soil (type 1)', () => {
-    const cx = 60, cy = 60;
-    fillDirt(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(1);
+  it('does not overwrite a non-air voxel', () => {
+    state.grids[0][10][10] = SOIL_PROTECTED;
+    expect(placeVoxel(10, 10, 0)).toBe(false);
+    expect(state.grids[0][10][10]).toBe(SOIL_PROTECTED);
   });
 
-  it('does not overwrite non-empty voxels', () => {
-    const cx = 60, cy = 60;
-    state.grids[0][px2v(cy)][px2v(cx)] = 3;
-    fillDirt(cx, cy, 0, 3);
-    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
+  it('ignores out-of-bounds coordinates', () => {
+    expect(placeVoxel(-1, 0, 0)).toBe(false);
+    expect(placeVoxel(0, 0, DEPTH)).toBe(false);
   });
 
-  it('does not modify voxels well outside the radius', () => {
-    fillDirt(40, 40, 0, 1);
-    // 10 voxels away
-    expect(state.grids[0][10][20]).toBe(0);
-  });
-
-  it('fills voxels on the requested z layer only', () => {
-    fillDirt(60, 60, 1, 3);
-    expect(state.grids[1][px2v(60)][px2v(60)]).toBe(1);
-    expect(state.grids[0][px2v(60)][px2v(60)]).toBe(0);
+  it('round-trips with digVoxel (volume conservation invariant)', () => {
+    state.grids[0][10][10] = SOIL_DIGGABLE;
+    expect(digVoxel(10, 10, 0)).toBe(true);
+    expect(placeVoxel(10, 10, 0)).toBe(true);
+    expect(state.grids[0][10][10]).toBe(SOIL_DIGGABLE);
   });
 });
 
-describe('dropDirt (simplified: stack above the column the ant is on)', () => {
-  function anyNewSoil(z: number, vyMin: number, vyMax: number, preExisting: Set<number>): boolean {
-    for (let vy = vyMin; vy <= vyMax; vy++) {
-      for (let vx = 0; vx < GRID_WIDTH; vx++) {
-        if (state.grids[z][vy][vx] === 1 && !preExisting.has(vy * GRID_WIDTH + vx)) return true;
-      }
-    }
-    return false;
-  }
-
-  it('places soil above a protected substrate at GROUND_LEVEL', () => {
+describe('makeDiggable', () => {
+  it('converts protected voxels in the targeted rectangle to diggable', () => {
     const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][groundVy][vx] = 3;
-    const pre = new Set<number>();
-    dropDirt(WIDTH / 2, 0, z, 3);
-    expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
+    const startVy = initialAirEndVy();
+    for (let dvy = 0; dvy < 3; dvy++) {
+      state.grids[z][startVy + dvy][20] = SOIL_PROTECTED;
+    }
+    makeDiggable(20, z, 1, 3);
+    expect(state.grids[z][startVy][20]).toBe(SOIL_DIGGABLE);
   });
 
-  it('places soil above an existing soil surface', () => {
+  it('leaves cells that are not protected unchanged', () => {
     const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    const pre = new Set<number>();
-    for (let vx = 0; vx < GRID_WIDTH; vx++) {
-      state.grids[z][groundVy][vx] = 1;
-      pre.add(groundVy * GRID_WIDTH + vx);
-    }
-    dropDirt(WIDTH / 2, 0, z, 3);
-    expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
+    const startVy = initialAirEndVy();
+    state.grids[z][startVy][20] = SOIL_DIGGABLE;
+    makeDiggable(20, z, 1, 1);
+    expect(state.grids[z][startVy][20]).toBe(SOIL_DIGGABLE);
   });
 
-  it('abandons the drop when there is no solid below the ant', () => {
-    const z = 0;
-    dropDirt(WIDTH / 2, 0, z, 5);
-    let anySoil = false;
-    for (let vy = 0; vy < GRID_HEIGHT; vy++) {
-      for (let vx = 0; vx < GRID_WIDTH; vx++) {
-        if (state.grids[z][vy][vx] !== 0) anySoil = true;
-      }
-    }
-    expect(anySoil).toBe(false);
+  it('ignores out-of-bounds z without throwing', () => {
+    expect(() => makeDiggable(20, -1, 1, 1)).not.toThrow();
+    expect(() => makeDiggable(20, DEPTH, 1, 1)).not.toThrow();
   });
-
-  it('refuses to stack higher than the mound cap', () => {
-    const z = 0;
-    const capVy = Math.floor(20 / VOXEL_SIZE);
-    for (let vy = capVy; vy < GRID_HEIGHT; vy++) {
-      for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][vy][vx] = 1;
-    }
-    const before = countSoil(z);
-    dropDirt(WIDTH / 2, 0, z, 10);
-    const after = countSoil(z);
-    expect(after).toBe(before);
-  });
-
-  it('returns 0 for non-positive amount', () => {
-    expect(dropDirt(WIDTH / 2, 0, 0, 0)).toBe(0);
-    expect(dropDirt(WIDTH / 2, 0, 0, -1)).toBe(0);
-  });
-
-  function countSoil(z: number): number {
-    let n = 0;
-    for (let vy = 0; vy < GRID_HEIGHT; vy++) {
-      for (let vx = 0; vx < GRID_WIDTH; vx++) {
-        if (state.grids[z][vy][vx] === 1) n++;
-      }
-    }
-    return n;
-  }
 });
 
 describe('depositPheromone / getPheromone', () => {
@@ -306,7 +208,7 @@ describe('depositPheromone / getPheromone', () => {
     expect(getPheromone(10, 10, 0)).toBe(0);
   });
 
-  it('stores deposited amount (voxel-quantized)', () => {
+  it('stores deposited amount', () => {
     depositPheromone(40, 40, 0, 0.5);
     expect(getPheromone(40, 40, 0)).toBeCloseTo(0.5);
   });
@@ -323,23 +225,18 @@ describe('depositPheromone / getPheromone', () => {
     expect(getPheromone(0, 0, 0)).toBe(1.0);
   });
 
-  it('returns 0 for out-of-bounds z', () => {
-    depositPheromone(10, 10, -1, 0.5);
+  it('returns 0 for out-of-bounds queries', () => {
     expect(getPheromone(10, 10, -1)).toBe(0);
-  });
-
-  it('returns 0 for out-of-bounds x', () => {
-    expect(getPheromone(WIDTH, 10, 0)).toBe(0);
-  });
-
-  it('returns 0 for out-of-bounds y', () => {
-    expect(getPheromone(10, HEIGHT, 0)).toBe(0);
+    expect(getPheromone(-1, 10, 0)).toBe(0);
     expect(getPheromone(10, -1, 0)).toBe(0);
+    expect(getPheromone(GRID_WIDTH, 10, 0)).toBe(0);
+    expect(getPheromone(10, GRID_HEIGHT, 0)).toBe(0);
   });
 
-  it('deposit ignores out-of-bounds y', () => {
+  it('deposit silently ignores out-of-bounds coordinates', () => {
     depositPheromone(10, -1, 0, 0.5);
-    depositPheromone(10, HEIGHT, 0, 0.5);
+    depositPheromone(10, GRID_HEIGHT, 0, 0.5);
+    depositPheromone(10, 10, -1, 0.5);
     expect(getPheromone(10, 0, 0)).toBe(0);
   });
 });
@@ -365,74 +262,21 @@ describe('evaporatePheromone', () => {
   });
 });
 
-describe('makeDiggable', () => {
-  it('converts protected voxels (3) to gel (1) within the width', () => {
-    const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    for (let dvy = 0; dvy < 3; dvy++) {
-      state.grids[z][groundVy + dvy][px2v(50)] = 3;
-    }
-    makeDiggable(50, z, 5, 8);
-    expect(state.grids[z][groundVy][px2v(50)]).toBe(1);
+describe('pixel/voxel helpers', () => {
+  it('pixelToVoxel rounds down by VOXEL_SIZE', () => {
+    expect(pixelToVoxel(0)).toBe(0);
+    expect(pixelToVoxel(1.9)).toBe(0);
+    expect(pixelToVoxel(2)).toBe(1);
   });
 
-  it('does not modify voxels that are not type 3', () => {
-    const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    state.grids[z][groundVy][px2v(50)] = 0;
-    makeDiggable(50, z, 5, 8);
-    expect(state.grids[z][groundVy][px2v(50)]).toBe(0);
-  });
-
-  it('ignores out-of-bounds z', () => {
-    expect(() => makeDiggable(50, -1, 5, 8)).not.toThrow();
-    expect(() => makeDiggable(50, DEPTH, 5, 8)).not.toThrow();
-  });
-
-  it('handles width that extends past the grid edge', () => {
-    const z = 0;
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    for (let dvy = 0; dvy < 3; dvy++) {
-      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 3;
-    }
-    makeDiggable(2, z, 12, 8);
-    expect(state.grids[z][groundVy][0]).toBe(1);
+  it('voxelCentrePx returns the centre of the voxel rectangle', () => {
+    expect(voxelCentrePx(0)).toBe(1);
+    expect(voxelCentrePx(10)).toBe(21);
   });
 });
 
-describe('attemptCreateNewEntrance', () => {
-  it('creates a diggable entrance when valid positions exist', () => {
-    for (let z = 0; z < DEPTH; z++) {
-      for (let vy = 0; vy < GRID_HEIGHT; vy++) {
-        for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          state.grids[z][vy][vx] = 3;
-        }
-      }
-    }
-    attemptCreateNewEntrance();
-    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-    const checkEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH + 4) / VOXEL_SIZE);
-    let hasDiggable = false;
-    outer: for (let z = 0; z < DEPTH; z++) {
-      for (let vy = groundVy; vy <= checkEnd; vy++) {
-        for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          if (state.grids[z][vy][vx] === 1) { hasDiggable = true; break outer; }
-        }
-      }
-    }
-    expect(hasDiggable).toBe(true);
-  });
-
-  it('does nothing when all positions have nearby openings', () => {
-    for (let z = 0; z < DEPTH; z++) {
-      const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
-      const endVy = Math.min(GRID_HEIGHT - 1, groundVy + 6);
-      for (let vy = groundVy; vy <= endVy; vy++) {
-        for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          state.grids[z][vy][vx] = 0;
-        }
-      }
-    }
-    expect(() => attemptCreateNewEntrance()).not.toThrow();
+describe('initial-state helpers', () => {
+  it('protectedEndVy is strictly after airEndVy', () => {
+    expect(initialProtectedEndVy()).toBeGreaterThan(initialAirEndVy());
   });
 });

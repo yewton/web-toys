@@ -1,5 +1,5 @@
 import './style.css';
-import { WIDTH, HEIGHT, VOXEL_SIZE, VOXEL_SIZE_STORAGE_KEY, ALLOWED_VOXEL_SIZES } from './constants';
+import { WIDTH, HEIGHT } from './constants';
 import { state, type ViewMode } from './state';
 import { initSimulation, startLoop, advanceSimulation } from './simulation';
 import { toggleLegend, hitTestLegend } from './debugView';
@@ -32,25 +32,6 @@ document.querySelectorAll('[data-view-mode]').forEach((btn) => {
       el.classList.toggle('view-btn-active', active);
       el.classList.toggle('view-btn-inactive', !active);
     });
-  });
-});
-
-// Voxel size selector. VOXEL_SIZE is baked in at module-load (it sizes the
-// grid/pheromone arrays), so we persist the choice and reload to apply.
-document.querySelectorAll<HTMLElement>('[data-voxel-size]').forEach((btn) => {
-  const size = parseInt(btn.dataset.voxelSize!, 10);
-  const active = size === VOXEL_SIZE;
-  btn.classList.toggle('view-btn-active', active);
-  btn.classList.toggle('view-btn-inactive', !active);
-  btn.addEventListener('click', () => {
-    if (size === VOXEL_SIZE) return;
-    if (!(ALLOWED_VOXEL_SIZES as readonly number[]).includes(size)) return;
-    try {
-      localStorage.setItem(VOXEL_SIZE_STORAGE_KEY, String(size));
-    } catch {
-      // ignore: localStorage may be blocked
-    }
-    location.reload();
   });
 });
 

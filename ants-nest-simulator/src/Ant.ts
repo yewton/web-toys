@@ -1,366 +1,372 @@
 import {
-  WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH,
-  DIG_RADIUS_PX, DIG_REACH_PX,
-  PHEROMONE_DEPOSIT_EXPLORE, PHEROMONE_DEPOSIT_RETURN,
+  STEP_SPEED,
+  DROP_PROB,
+  DIG_PROB_BASE,
+  DIG_PROB_DEADEND,
+  PHEROMONE_DEPOSIT_EXPLORE,
+  PHEROMONE_DEPOSIT_RETURN,
+  UPWARD_BIAS_STRENGTH,
+  DOWNWARD_BIAS_STRENGTH,
+  PHEROMONE_PULL_STRENGTH,
+  ANGLE_CONCENTRATION,
 } from './constants';
-import { getGridType, digGel, dropDirtInside, dropDirt, dirtColor, depositPheromone, getPheromone, makeDiggable } from './grid';
+import {
+  SOIL_DIGGABLE,
+  CARDINAL_OFFSETS,
+  getVoxel,
+  isAir,
+  canStandAt,
+  digVoxel,
+  placeVoxel,
+  depositPheromone,
+  getPheromone,
+  voxelCentrePx,
+} from './grid';
 
+/**
+ * Voxel-discrete ant.
+ *
+ * State machine per `update()` call:
+ *   - If currently mid-step (interpolating between two voxels): advance
+ *     `moveProgress` by `STEP_SPEED / moveDistance`; on completion snap to the
+ *     destination voxel and deposit pheromone there.
+ *   - Otherwise (idle at a voxel): pick exactly one of {drop, dig, move}.
+ *     A move sets `isMoving = true` so the next frame begins interpolation.
+ *
+ * Movement rule (the simulation's whole geometric invariant):
+ *   The destination voxel must be air AND have at least one 6-cardinal soil
+ *   neighbour. Out-of-bounds counts as soil, so ants can crawl along the
+ *   world edges but can never escape them.
+ *
+ * Carry rule: an ant carries either 0 or exactly 1 voxel of soil — never more.
+ */
+
+const TWO_PI = Math.PI * 2;
 function wrapAngle(diff: number): number {
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += TWO_PI;
+  while (diff > Math.PI) diff -= TWO_PI;
   return diff;
 }
 
-export class Ant {
-  x: number;
-  y: number;
-  z: number;
+/** All 26 3D Moore-neighbour offsets, precomputed with the squared distance
+ *  used for movement-cost scaling. */
+interface NeighbourOffset {
+  dx: number;
+  dy: number;
+  dz: number;
+  distance: number;
+  /** Pre-computed 2D heading angle of (dx, dy). NaN when dx == 0 && dy == 0
+   *  (pure Z move) — those candidates skip angle weighting. */
   angle: number;
-  readonly speed = 0.7;
+}
+const NEIGHBOUR_OFFSETS: readonly NeighbourOffset[] = (() => {
+  const list: NeighbourOffset[] = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dy === 0 && dz === 0) continue;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const angle = (dx === 0 && dy === 0) ? NaN : Math.atan2(dy, dx);
+        list.push({ dx, dy, dz, distance, angle });
+      }
+    }
+  }
+  return list;
+})();
 
-  wanderAngle = Math.PI / 2;
-  wanderTimer = 0;
+interface MoveCandidate {
+  offset: NeighbourOffset;
+  weight: number;
+}
 
-  hasDirt = false;
-  /** Voxels of soil this ant is carrying. Mirrored by hasDirt for UI/wander logic. */
-  carryAmount = 0;
-  dropTimer = 0;
-  turnCount = 0;
-  surfaceFrustration = 0;
+export class Ant {
+  // ─── Discrete state ────────────────────────────────────────────────────────
+  vx: number;
+  vy: number;
+  vz: number;
+  /** 2D heading preference, in radians. Smooths between successive moves. */
+  angle: number;
+  /** True iff the ant is currently carrying exactly 1 voxel of soil. */
+  carrying = false;
 
+  // ─── Move-in-progress state ────────────────────────────────────────────────
+  isMoving = false;
+  srcVx = 0;
+  srcVy = 0;
+  srcVz = 0;
+  tgtVx = 0;
+  tgtVy = 0;
+  tgtVz = 0;
+  moveDistance = 1;
+  moveProgress = 0;
+
+  // ─── Animation (pixels) ────────────────────────────────────────────────────
   drawX: number;
   drawY: number;
   drawAngle: number;
-  presentationTargetAngle: number;
   walkCycle: number;
 
-  prevX: number;
-  prevY: number;
-  accumDx = 0;
-  accumDy = 0;
-
-  constructor(x: number, y: number, z: number) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
-    this.angle = Math.random() * Math.PI * 2;
-
-    this.drawX = x;
-    this.drawY = y;
+  constructor(vx: number, vy: number, vz: number) {
+    this.vx = vx;
+    this.vy = vy;
+    this.vz = vz;
+    this.angle = Math.random() * TWO_PI;
+    this.drawX = voxelCentrePx(vx);
+    this.drawY = voxelCentrePx(vy);
     this.drawAngle = this.angle;
-    this.presentationTargetAngle = this.angle;
-    this.walkCycle = Math.random() * Math.PI * 2;
-
-    this.prevX = x;
-    this.prevY = y;
+    this.walkCycle = Math.random() * TWO_PI;
   }
 
-  private isWideSpace(): boolean {
-    let emptyCount = 0;
-    const r = 10;
-    let total = 0;
-    for (let dy = -r; dy <= r; dy += 2) {
-      for (let dx = -r; dx <= r; dx += 2) {
-        if (dx * dx + dy * dy <= r * r) {
-          total++;
-          if (getGridType(this.x + dx, this.y + dy, this.z) === 0) emptyCount++;
-        }
-      }
-    }
-    return emptyCount / total > 0.65;
-  }
-
+  /** One simulation step (called every physics tick). */
   update(): void {
-    const currentGridType = getGridType(this.x, this.y, this.z);
-    if (currentGridType === 1 && this.y < GROUND_LEVEL) {
-      // Ant got buried inside a surface mound — dig itself free.
-      // (Volume from rescue digs is discarded, not added to carry.)
-      digGel(this.x, this.y, this.z, 2.5);
-    } else if (currentGridType === 3) {
-      this.y -= 2.0;
+    if (this.isMoving) {
+      this.advanceMove();
+      return;
+    }
+    this.idleTurn();
+  }
+
+  // ─── Interpolation tick ────────────────────────────────────────────────────
+
+  private advanceMove(): void {
+    this.moveProgress += STEP_SPEED / this.moveDistance;
+    if (this.moveProgress >= 1) {
+      this.vx = this.tgtVx;
+      this.vy = this.tgtVy;
+      this.vz = this.tgtVz;
+      this.isMoving = false;
+      this.moveProgress = 0;
+      // Pheromone trail: carrying ants reinforce return path, explorers
+      // leave a faint sniff so other explorers diffuse outward.
+      depositPheromone(
+        this.vx,
+        this.vy,
+        this.vz,
+        this.carrying ? PHEROMONE_DEPOSIT_RETURN : PHEROMONE_DEPOSIT_EXPLORE,
+      );
+    }
+  }
+
+  // ─── Idle action selection ─────────────────────────────────────────────────
+
+  private idleTurn(): void {
+    // Drop attempt (carrying only): bias toward placing the voxel below
+    // the ant so successive deposits form a mound from the top down.
+    if (this.carrying && Math.random() < DROP_PROB) {
+      if (this.tryDrop()) return;
     }
 
-    this.angle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const candidates = this.collectMoveCandidates();
 
-    const sensorDist = 6;
-    const leftAngle = this.angle - Math.PI / 3;
-    const rightAngle = this.angle + Math.PI / 3;
-
-    const frontType = getGridType(
-      this.x + Math.cos(this.angle) * sensorDist,
-      this.y + Math.sin(this.angle) * sensorDist,
-      this.z,
-    );
-    const leftType = getGridType(
-      this.x + Math.cos(leftAngle) * sensorDist,
-      this.y + Math.sin(leftAngle) * sensorDist,
-      this.z,
-    );
-    const rightType = getGridType(
-      this.x + Math.cos(rightAngle) * sensorDist,
-      this.y + Math.sin(rightAngle) * sensorDist,
-      this.z,
-    );
-
-    const frontVal = frontType > 0 ? 1 : 0;
-    const leftVal = leftType > 0 ? 1 : 0;
-    const rightVal = rightType > 0 ? 1 : 0;
-
-    if (this.y < GROUND_LEVEL + 5 && !this.hasDirt) {
-      const underType = getGridType(this.x, this.y + 6, this.z);
-      if (underType === 1 || underType === 0) {
-        this.angle += wrapAngle(Math.PI / 2 - this.angle) * 0.3;
+    // Dead-end: no valid neighbour to step into. Force a dig of an adjacent
+    // soil voxel so the ant can re-open a path (or fill itself silly if its
+    // hands are already full — pick up no extra in that case).
+    if (candidates.length === 0) {
+      if (Math.random() < DIG_PROB_DEADEND) {
+        this.forceDigAdjacent();
+        return;
       }
     }
 
-    if (this.y < GROUND_LEVEL && getGridType(this.x, this.y + 8, this.z) === 0) {
-      this.angle += wrapAngle(Math.PI / 2 - this.angle) * 0.05;
+    // Dig in front (only with free hands): peek at the cardinal voxel nearest
+    // the heading; if it is diggable, take a bite instead of moving.
+    if (!this.carrying && Math.random() < DIG_PROB_BASE) {
+      if (this.tryDigForward()) return;
     }
 
-    if (frontVal === 1) {
-      this.handleObstacle(frontType, leftVal, rightVal);
-    } else {
-      this.handleFreeMovement();
+    // Default action: pick a candidate weighted by heading + pheromone + bias
+    // and start interpolating toward it.
+    if (candidates.length > 0) {
+      this.startMove(this.sampleCandidate(candidates));
+      return;
     }
 
-    if (this.y >= GROUND_LEVEL) this.surfaceFrustration = 0;
-
-    this.x = Math.max(0, Math.min(WIDTH, this.x));
-    this.y = Math.max(0, Math.min(HEIGHT, this.y));
-    if (this.x === 0) this.angle = 0;
-    if (this.x === WIDTH) this.angle = Math.PI;
-    if (this.y === 0) this.angle = Math.PI / 2;
-    if (this.y === HEIGHT) this.angle = -Math.PI / 2;
+    // No candidates AND we didn't force-dig: spin the heading and wait.
+    this.angle += (Math.random() - 0.5) * 0.8;
   }
 
-  private handleObstacle(frontType: number, leftVal: number, rightVal: number): void {
-    const isDeadEnd = leftVal === 1 && rightVal === 1;
-    let digProb = 0;
+  // ─── Drop ──────────────────────────────────────────────────────────────────
 
-    if (!this.hasDirt && frontType === 1) {
-      const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
-      const inWideSpace = this.y >= GROUND_LEVEL + 15 ? this.isWideSpace() : false;
-
-      if (this.y < GROUND_LEVEL + PROTECTED_DEPTH + 5) {
-        digProb = 0.8;
-      } else if (isDeadEnd) {
-        digProb = 1.0;
-      } else {
-        digProb = 0.002 + depthRatio * 0.015;
+  /** Drop only when the carrier has run out of upward moves — i.e. when it
+   *  has reached the topmost reachable voxel of its current cavity. This is
+   *  the rule that makes mounds form naturally at the highest accessible
+   *  point of any region (surface mound at the top of the world, plug at
+   *  the top of an enclosed chamber) without referring to a global ground
+   *  level. Returns true if a voxel was placed. */
+  private tryDrop(): boolean {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (canStandAt(this.vx + dx, this.vy - 1, this.vz + dz)) return false;
       }
-
-      if (inWideSpace) digProb = 0;
     }
-
-    if (digProb > 0 && Math.random() < digProb) {
-      this.digOneCell();
-    } else {
-      this.avoidObstacle(frontType, leftVal, rightVal);
+    // Out of upward moves: place into a randomly-chosen air neighbour,
+    // biased toward "below" so successive deposits build a stack downward
+    // from the ceiling rather than orbiting the same spot.
+    const below: NeighbourOffset[] = [];
+    const lateral: NeighbourOffset[] = [];
+    const above: NeighbourOffset[] = [];
+    for (const o of NEIGHBOUR_OFFSETS) {
+      if (!isAir(this.vx + o.dx, this.vy + o.dy, this.vz + o.dz)) continue;
+      if (o.dy > 0) below.push(o);
+      else if (o.dy === 0) lateral.push(o);
+      else above.push(o);
     }
-  }
-
-  /**
-   * Per-cell dig with forward sustain: shave one small chunk of gel (radius 1.5) and step forward
-   * a fraction of normal speed. Tunnels lengthen via repeated single-bite digs, never via a burst.
-   * On each bite there's a small chance the ant decides "I have enough" — it grabs the dirt, turns
-   * around, and heads back toward the surface to deposit it.
-   */
-  private digOneCell(): void {
-    // Pixel-anchored: how many voxels each bite removes depends on VOXEL_SIZE
-    // (smaller voxels → more voxels per bite), but the visual bite stays the same.
-    const digX = this.x + Math.cos(this.angle) * DIG_REACH_PX;
-    const digY = this.y + Math.sin(this.angle) * DIG_REACH_PX;
-    const dug = digGel(digX, digY, this.z, DIG_RADIUS_PX);
-    this.carryAmount += dug;
-    this.x += Math.cos(this.angle) * this.speed * 0.5;
-    this.y += Math.sin(this.angle) * this.speed * 0.5;
-    this.angle += (Math.random() - 0.5) * 0.15;
-    // Decide whether the ant has piled up enough to head home. The 0.15 base rate
-    // is roughly 3× the legacy 0.05, because each bite now removes a whole voxel
-    // (volume-conserving carry instead of "one grain per nibble").
-    if (this.carryAmount > 0 && Math.random() < 0.15) {
-      this.hasDirt = true;
-      this.angle += Math.PI;
-      this.wanderAngle = this.y >= GROUND_LEVEL ? -Math.PI / 2 : Math.PI / 2;
-      this.wanderTimer = 100;
-      this.turnCount = 0;
-    }
-  }
-
-  private avoidObstacle(frontType: number, leftVal: number, rightVal: number): void {
-    this.turnCount++;
-
-    if (frontType === 3 && this.y < GROUND_LEVEL + 30) {
-      if (!this.hasDirt) this.surfaceFrustration++;
-      const dir = Math.random() > 0.5 ? 0 : Math.PI;
-      this.angle = dir + (Math.random() - 0.5) * 0.4;
-      this.x += Math.cos(this.angle) * this.speed;
-      this.y += Math.sin(this.angle) * this.speed;
-    } else if (this.turnCount > 3) {
-      this.angle += (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * (Math.PI / 2));
-      this.turnCount = 0;
-    } else {
-      if (leftVal === 0 && rightVal === 1) {
-        this.angle -= 0.3;
-      } else if (rightVal === 0 && leftVal === 1) {
-        this.angle += 0.3;
-      } else {
-        this.angle += (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * 0.5);
-      }
-      this.x += Math.cos(this.angle) * this.speed * 0.5;
-      this.y += Math.sin(this.angle) * this.speed * 0.5;
-    }
-  }
-
-  private handleFreeMovement(): void {
-    this.turnCount = 0;
-
-    this.wanderTimer--;
-    if (this.wanderTimer <= 0) {
-      const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
-      if (this.hasDirt) {
-        this.wanderAngle = this.y >= GROUND_LEVEL
-          ? -Math.PI / 2 + (Math.random() - 0.5) * 0.3
-          : Math.PI / 2 + (Math.random() - 0.5) * 0.3;
-        this.wanderTimer = 100 + Math.random() * 150;
-      } else if (this.y < GROUND_LEVEL) {
-        // Surface explorer: prefer long horizontal traversals so they sample the whole surface.
-        if (Math.random() < 0.3) {
-          this.wanderAngle = Math.PI / 2 + (Math.random() - 0.5) * 0.6;
-        } else {
-          const dir = Math.random() > 0.5 ? 0 : Math.PI;
-          this.wanderAngle = dir + (Math.random() - 0.5) * 0.5;
+    for (const bucket of [below, lateral, above]) {
+      shuffleInPlace(bucket);
+      for (const o of bucket) {
+        if (placeVoxel(this.vx + o.dx, this.vy + o.dy, this.vz + o.dz)) {
+          this.carrying = false;
+          return true;
         }
-        this.wanderTimer = 250 + Math.random() * 300;
-      } else if (Math.random() < depthRatio * 0.7) {
-        this.wanderAngle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
-        this.wanderTimer = 100 + Math.random() * 200;
-      } else {
-        this.wanderAngle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
-        this.wanderTimer = 100 + Math.random() * 200;
       }
     }
+    return false;
+  }
 
-    if (Math.random() < 0.05) {
-      const possibleZ: number[] = [];
-      if (this.z > 0 && getGridType(this.x, this.y, this.z - 1) === 0) possibleZ.push(this.z - 1);
-      if (this.z < DEPTH - 1 && getGridType(this.x, this.y, this.z + 1) === 0) possibleZ.push(this.z + 1);
-      if (possibleZ.length > 0) {
-        this.z = possibleZ[Math.floor(Math.random() * possibleZ.length)];
+  // ─── Dig ───────────────────────────────────────────────────────────────────
+
+  /** Dig the most heading-aligned soil voxel out of the ant's 6 cardinal
+   *  neighbours. Because an ant lives in an air voxel with a soil neighbour,
+   *  "in front" is almost always more air; targeting a soil-side wall is
+   *  what actually progresses the tunnel network. Returns true on a dig. */
+  private tryDigForward(): boolean {
+    const ax = Math.cos(this.angle);
+    const ay = Math.sin(this.angle);
+    let bestDot = -Infinity;
+    let bestOff: readonly [number, number, number] | null = null;
+    for (const off of CARDINAL_OFFSETS) {
+      const [dx, dy, dz] = off;
+      if (getVoxel(this.vx + dx, this.vy + dy, this.vz + dz) !== SOIL_DIGGABLE) continue;
+      // 2D heading score; Z-only neighbours score 0 (neutral) so the ant can
+      // still dig sideways into the adjacent layer when nothing else is aligned.
+      const dot = dx === 0 && dy === 0 ? 0 : dx * ax + dy * ay;
+      if (dot > bestDot) {
+        bestDot = dot;
+        bestOff = off;
       }
     }
+    if (!bestOff) return false;
+    if (digVoxel(this.vx + bestOff[0], this.vy + bestOff[1], this.vz + bestOff[2])) {
+      this.carrying = true;
+      return true;
+    }
+    return false;
+  }
 
-    if (this.hasDirt && this.y >= GROUND_LEVEL) {
-      const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
-      if (Math.random() < 0.0001 + depthRatio * 0.005) {
-        const dropped = dropDirtInside(this.x, this.y, this.z);
-        this.carryAmount = Math.max(0, this.carryAmount - dropped);
-        if (this.carryAmount === 0) this.hasDirt = false;
-        this.wanderAngle = Math.PI / 2;
-        this.wanderTimer = 100;
+  /** Last-resort: when the ant is sealed in and there are no valid moves,
+   *  dig the first diggable cardinal neighbour. The dug voxel is discarded
+   *  if hands are full (rescue dig, not productive). */
+  private forceDigAdjacent(): void {
+    for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
+      const nx = this.vx + dx;
+      const ny = this.vy + dy;
+      const nz = this.vz + dz;
+      if (getVoxel(nx, ny, nz) === SOIL_DIGGABLE) {
+        const dug = digVoxel(nx, ny, nz);
+        if (dug && !this.carrying) this.carrying = true;
+        return;
       }
     }
+  }
 
-    if (this.hasDirt && this.y < GROUND_LEVEL) {
-      if (this.dropTimer <= 0) this.dropTimer = 30 + Math.random() * 80;
-      this.dropTimer--;
-      if (this.dropTimer <= 0) {
-        const placed = dropDirt(this.x, this.y, this.z, this.carryAmount);
-        this.carryAmount = Math.max(0, this.carryAmount - placed);
-        // Discard any leftover that wouldn't fit (e.g., column saturated at mound cap)
-        // so the ant doesn't get stuck wandering with un-placeable dirt.
-        this.carryAmount = 0;
-        this.hasDirt = false;
-        this.wanderAngle = Math.PI / 2;
-        this.wanderTimer = 100;
-      }
+  // ─── Move ──────────────────────────────────────────────────────────────────
+
+  private collectMoveCandidates(): MoveCandidate[] {
+    const out: MoveCandidate[] = [];
+    for (const o of NEIGHBOUR_OFFSETS) {
+      const tx = this.vx + o.dx;
+      const ty = this.vy + o.dy;
+      const tz = this.vz + o.dz;
+      if (!canStandAt(tx, ty, tz)) continue;
+      out.push({ offset: o, weight: this.weightCandidate(o, tx, ty, tz) });
     }
+    return out;
+  }
 
-    if (this.y >= GROUND_LEVEL) {
-      const senseDist = 8;
-      const la = this.angle - Math.PI / 3;
-      const ra = this.angle + Math.PI / 3;
-      const leftPh = getPheromone(
-        this.x + Math.cos(la) * senseDist,
-        this.y + Math.sin(la) * senseDist,
-        this.z,
-      );
-      const rightPh = getPheromone(
-        this.x + Math.cos(ra) * senseDist,
-        this.y + Math.sin(ra) * senseDist,
-        this.z,
-      );
-      const phDiff = leftPh - rightPh;
-      if (this.hasDirt) {
-        this.angle -= phDiff * 0.3;
-      } else {
-        this.angle += phDiff * 0.1;
-      }
-
-      const deposit = this.hasDirt ? PHEROMONE_DEPOSIT_RETURN : PHEROMONE_DEPOSIT_EXPLORE;
-      depositPheromone(this.x, this.y, this.z, deposit);
+  /** Compose the heading-bias × upward-bias × pheromone-bias product. */
+  private weightCandidate(o: NeighbourOffset, tx: number, ty: number, tz: number): number {
+    // Heading alignment (von-Mises-ish): peaks at delta=0, falls off smoothly.
+    // Pure-Z candidates (NaN angle) get a neutral score so the ant can still
+    // change layer without the heading vetoing it.
+    let angleScore = 1;
+    if (!Number.isNaN(o.angle)) {
+      const delta = wrapAngle(o.angle - this.angle);
+      angleScore = Math.exp(ANGLE_CONCENTRATION * (Math.cos(delta) - 1));
     }
+    // Vertical bias: carriers pulled up (toward the surface mound), empty
+    // explorers pulled down (toward fresh diggable soil). Without the
+    // explorer-down bias, ants tend to circle the surface forever.
+    let vertical = 1;
+    if (this.carrying && o.dy < 0) vertical = 1 + UPWARD_BIAS_STRENGTH;
+    else if (!this.carrying && o.dy > 0) vertical = 1 + DOWNWARD_BIAS_STRENGTH;
+    // Pheromone pull: explorers attracted to return-trail (which leads to a
+    // working dig site), carriers also follow the trail back along the
+    // already-cleared route.
+    const ph = getPheromone(tx, ty, tz);
+    const pheromoneFactor = 1 + PHEROMONE_PULL_STRENGTH * ph;
+    return angleScore * vertical * pheromoneFactor;
+  }
 
-    // Frustrated surface ants open a fresh entrance where they happen to be.
-    if (!this.hasDirt && this.y < GROUND_LEVEL && this.surfaceFrustration > 120) {
-      makeDiggable(this.x, this.z, 4, PROTECTED_DEPTH + 1);
-      this.surfaceFrustration = 0;
+  private sampleCandidate(cands: MoveCandidate[]): NeighbourOffset {
+    let total = 0;
+    for (const c of cands) total += c.weight;
+    if (total <= 0) return cands[Math.floor(Math.random() * cands.length)].offset;
+    let r = Math.random() * total;
+    for (const c of cands) {
+      r -= c.weight;
+      if (r <= 0) return c.offset;
     }
+    return cands[cands.length - 1].offset;
+  }
 
-    this.angle += wrapAngle(this.wanderAngle - this.angle) * (this.hasDirt ? 0.12 : 0.03);
+  private startMove(o: NeighbourOffset): void {
+    this.srcVx = this.vx;
+    this.srcVy = this.vy;
+    this.srcVz = this.vz;
+    this.tgtVx = this.vx + o.dx;
+    this.tgtVy = this.vy + o.dy;
+    this.tgtVz = this.vz + o.dz;
+    this.moveDistance = o.distance;
+    this.moveProgress = 0;
+    this.isMoving = true;
+    // Snap heading toward the move so successive moves prefer the same
+    // direction (straighter tunnels). Pure-Z moves leave the heading alone.
+    if (!Number.isNaN(o.angle)) {
+      this.angle += wrapAngle(o.angle - this.angle) * 0.5;
+    }
+  }
 
-    if (getGridType(this.x, this.y + 3, this.z) === 0) this.y += 0.5;
+  // ─── Drawing ───────────────────────────────────────────────────────────────
 
-    const currentSpeed = this.y >= GROUND_LEVEL ? this.speed * 1.5 : this.speed;
-    this.x += Math.cos(this.angle) * currentSpeed;
-    this.y += Math.sin(this.angle) * currentSpeed;
+  /** Compute the pixel position the ant should be drawn at this frame,
+   *  interpolating between source and target voxel centres when mid-step. */
+  private interpolatedPx(): { x: number; y: number } {
+    if (this.isMoving) {
+      const sx = voxelCentrePx(this.srcVx);
+      const sy = voxelCentrePx(this.srcVy);
+      const tx = voxelCentrePx(this.tgtVx);
+      const ty = voxelCentrePx(this.tgtVy);
+      const t = this.moveProgress;
+      return { x: sx + (tx - sx) * t, y: sy + (ty - sy) * t };
+    }
+    return { x: voxelCentrePx(this.vx), y: voxelCentrePx(this.vy) };
   }
 
   updateAnimation(): void {
-    // Minimum distance the actual position must diverge from the drawn position
-    // before any visual update occurs. Suppresses spinning-in-place appearance.
-    const DRAW_THRESHOLD = 3.0;
-
-    const dx = this.x - this.prevX;
-    const dy = this.y - this.prevY;
-
-    if (Math.hypot(dx, dy) > 15) {
-      this.accumDx = 0;
-      this.accumDy = 0;
+    const target = this.interpolatedPx();
+    const dx = target.x - this.drawX;
+    const dy = target.y - this.drawY;
+    // Snap on large discrepancies (e.g. respawn or visual reset).
+    if (Math.hypot(dx, dy) > 30) {
+      this.drawX = target.x;
+      this.drawY = target.y;
     } else {
-      this.accumDx += dx;
-      this.accumDy += dy;
+      this.drawX += dx * 0.5;
+      this.drawY += dy * 0.5;
     }
-
-    if (Math.hypot(this.accumDx, this.accumDy) > 3.0) {
-      this.presentationTargetAngle = Math.atan2(this.accumDy, this.accumDx);
-      this.accumDx = 0;
-      this.accumDy = 0;
-    }
-
-    this.prevX = this.x;
-    this.prevY = this.y;
-
-    const drawDx = this.x - this.drawX;
-    const drawDy = this.y - this.drawY;
-    const drawDist = Math.hypot(drawDx, drawDy);
-
-    let stepDx = 0;
-    let stepDy = 0;
-
-    if (drawDist > 15) {
-      this.drawX = this.x;
-      this.drawY = this.y;
-      this.drawAngle = this.presentationTargetAngle;
-    } else if (drawDist > DRAW_THRESHOLD) {
-      stepDx = drawDx * 0.4;
-      stepDy = drawDy * 0.4;
-      this.drawX += stepDx;
-      this.drawY += stepDy;
-      this.drawAngle += wrapAngle(this.presentationTargetAngle - this.drawAngle) * 0.15;
-    }
-
-    this.walkCycle += Math.hypot(stepDx, stepDy) * 0.6;
+    const stepDist = Math.hypot(dx, dy);
+    this.drawAngle += wrapAngle(this.angle - this.drawAngle) * 0.2;
+    this.walkCycle += stepDist * 0.6;
   }
 
   draw(ctx: CanvasRenderingContext2D, isHighlighted = false): void {
@@ -387,7 +393,7 @@ export class Ant {
       ctx.fill();
     }
 
-    const scale = 1 + (this.z - 1) * 0.2;
+    const scale = 1 + (this.vz - 1) * 0.2;
     ctx.scale(scale, scale);
     ctx.rotate(this.drawAngle);
 
@@ -414,13 +420,20 @@ export class Ant {
     ctx.moveTo(5, 0); ctx.lineTo(7, 2);
     ctx.stroke();
 
-    if (this.hasDirt) {
-      ctx.fillStyle = `rgba(0, ${dirtColor(this.drawY)}, 0.9)`;
+    if (this.carrying) {
+      ctx.fillStyle = 'rgba(180, 110, 60, 0.95)';
       ctx.beginPath();
       ctx.arc(6, 0, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.restore();
+  }
+}
+
+function shuffleInPlace<T>(a: T[]): void {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
 }
