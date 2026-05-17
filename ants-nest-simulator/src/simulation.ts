@@ -30,14 +30,13 @@ function renderNormal(ctx: CanvasRenderingContext2D): void {
   for (const ant of state.ants) antsByZ[ant.z].push(ant);
 
   for (let z = 0; z < DEPTH; z++) {
-    // Composite soil using the mask with metaball-style smoothing
+    // Composite soil using the mask
     offscreenCtx.clearRect(0, 0, WIDTH, HEIGHT);
 
-    // Apply smooth filter to the mask before clipping the gradient
-    offscreenCtx.save();
-    offscreenCtx.filter = 'blur(2.0px) contrast(300%)';
-    offscreenCtx.drawImage(soilCanvases[z], 0, 0);
-    offscreenCtx.restore();
+    // Draw the small voxel mask scaled up.
+    // Linear interpolation provides natural smoothing.
+    offscreenCtx.imageSmoothingEnabled = true;
+    offscreenCtx.drawImage(soilCanvases[z], 0, 0, WIDTH, HEIGHT);
 
     offscreenCtx.globalCompositeOperation = 'source-in';
     offscreenCtx.drawImage(gradientCanvas, 0, 0);
@@ -101,9 +100,10 @@ export function initSimulation(): void {
     state.grids[z] = Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH));
     state.pheromone.push(new Float32Array(GRID_WIDTH * GRID_HEIGHT));
 
+    // Initialize soil mask at VOXEL resolution
     const sCanvas = document.createElement('canvas');
-    sCanvas.width = WIDTH;
-    sCanvas.height = HEIGHT;
+    sCanvas.width = GRID_WIDTH;
+    sCanvas.height = GRID_HEIGHT;
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true })!;
 
     for (let vy = 0; vy < GRID_HEIGHT; vy++) {
@@ -113,9 +113,9 @@ export function initSimulation(): void {
         }
       }
     }
-    // Fill mask with solid color where soil exists
+    // Fill initial mask (voxel coordinates)
     sCtx.fillStyle = 'white';
-    sCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
+    sCtx.fillRect(0, groundVy, GRID_WIDTH, GRID_HEIGHT - groundVy);
 
     state.soilCanvases.push(sCanvas);
     state.soilCtxs.push(sCtx);

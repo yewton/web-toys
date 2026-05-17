@@ -73,55 +73,20 @@ function applyToVoxelCircle(
   return changed;
 }
 
-/**
- * Synchronizes a region of the soilCanvas mask with the underlying grid data.
- * Each solid voxel is drawn as a circular "blob" that overlaps neighbors for smoothness.
- * This ensures the visual state is a perfect, artifact-free reflection of the grid.
- */
-function syncRegionToCanvas(z: number, minVx: number, minVy: number, maxVx: number, maxVy: number): void {
-  const ctx = state.soilCtxs[z];
-  const radius = VOXEL_SIZE_PX * 1.25; // Significant overlap for metaball effect
-
-  // Clear a slightly larger area to account for the larger radius
-  const margin = 2;
-  const clearX = Math.max(0, (minVx - margin) * VOXEL_SIZE_PX);
-  const clearY = Math.max(0, (minVy - margin) * VOXEL_SIZE_PX);
-  const clearW = (maxVx - minVx + margin * 2 + 1) * VOXEL_SIZE_PX;
-  const clearH = (maxVy - minVy + margin * 2 + 1) * VOXEL_SIZE_PX;
-  ctx.clearRect(clearX, clearY, clearW, clearH);
-
-  ctx.fillStyle = 'white';
-  for (let vy = Math.max(0, minVy - margin); vy <= Math.min(GRID_HEIGHT - 1, maxVy + margin); vy++) {
-    for (let vx = Math.max(0, minVx - margin); vx <= Math.min(GRID_WIDTH - 1, maxVx + margin); vx++) {
-      if (state.grids[z][vy][vx] > 0) {
-        ctx.beginPath();
-        ctx.arc(
-          vx * VOXEL_SIZE_PX + VOXEL_SIZE_PX / 2,
-          vy * VOXEL_SIZE_PX + VOXEL_SIZE_PX / 2,
-          radius, 0, Math.PI * 2
-        );
-        ctx.fill();
-      }
-    }
-  }
-}
-
 /** Excavates diggable soil (1) in a circle centered at (cx, cy). Returns dug voxel count. */
 export function digGel(cx: number, cy: number, z: number, radius: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  let minVx = GRID_WIDTH, maxVx = 0, minVy = GRID_HEIGHT, maxVy = 0;
+  const ctx = state.soilCtxs[z];
   const dug = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
     if (state.grids[z][vy][vx] === 1) {
       state.grids[z][vy][vx] = 0;
-      minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
-      minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
+      ctx.clearRect(vx, vy, 1, 1);
       return true;
     }
     return false;
   });
 
-  if (dug > 0) syncRegionToCanvas(z, minVx, minVy, maxVx, maxVy);
   return dug;
 }
 
@@ -147,19 +112,18 @@ export const dirtFillStyle = soilFillStyle;
 export function dropDirtInside(cx: number, cy: number, z: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  let minVx = GRID_WIDTH, maxVx = 0, minVy = GRID_HEIGHT, maxVy = 0;
+  const ctx = state.soilCtxs[z];
+  ctx.fillStyle = soilFillStyle();
   const placed = applyToVoxelCircle(cx, cy, DIG_RADIUS_PX, (vx, vy) => {
     if (vy * VOXEL_SIZE_PX < GROUND_LEVEL) return false;
     if (state.grids[z][vy][vx] === 0) {
       state.grids[z][vy][vx] = 1;
-      minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
-      minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
+      ctx.fillRect(vx, vy, 1, 1);
       return true;
     }
     return false;
   });
 
-  if (placed > 0) syncRegionToCanvas(z, minVx, minVy, maxVx, maxVy);
   return placed;
 }
 
@@ -167,18 +131,17 @@ export function dropDirtInside(cx: number, cy: number, z: number): number {
 export function fillDirt(cx: number, cy: number, z: number, radius: number): number {
   if (z < 0 || z >= DEPTH) return 0;
 
-  let minVx = GRID_WIDTH, maxVx = 0, minVy = GRID_HEIGHT, maxVy = 0;
+  const ctx = state.soilCtxs[z];
+  ctx.fillStyle = soilFillStyle();
   const placed = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
     if (state.grids[z][vy][vx] === 0) {
       state.grids[z][vy][vx] = 1;
-      minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
-      minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
+      ctx.fillRect(vx, vy, 1, 1);
       return true;
     }
     return false;
   });
 
-  if (placed > 0) syncRegionToCanvas(z, minVx, minVy, maxVx, maxVy);
   return placed;
 }
 
@@ -260,12 +223,16 @@ export function openEntrance(cx: number, z: number, width: number, depth: number
   const minVy = Math.max(0, Math.floor(GROUND_LEVEL / VOXEL_SIZE_PX));
   const maxVy = Math.min(GRID_HEIGHT - 1, Math.floor((GROUND_LEVEL + depth) / VOXEL_SIZE_PX));
 
+  const ctx = state.soilCtxs[z];
+  ctx.fillStyle = 'white';
   for (let vy = minVy; vy <= maxVy; vy++) {
     for (let vx = minVx; vx <= maxVx; vx++) {
-      if (state.grids[z][vy][vx] === 3) state.grids[z][vy][vx] = 1;
+      if (state.grids[z][vy][vx] === 3) {
+        state.grids[z][vy][vx] = 1;
+        ctx.fillRect(vx, vy, 1, 1);
+      }
     }
   }
-  syncRegionToCanvas(z, minVx, minVy, maxVx, maxVy);
 }
 
 /** Automatically generates a new entrance away from existing tunnel openings */
@@ -299,7 +266,6 @@ export function attemptCreateNewEntrance(): void {
     openEntrance(targetX, (targetZ + 1) % DEPTH, 3, PROTECTED_DEPTH + 1);
   }
 }
-
 /**
  * Simple settling logic: loose soil (Type 1) above ground level falls down if there is air below it.
  * This prevents "floating" mounds when ants dig out the base.
@@ -307,6 +273,7 @@ export function attemptCreateNewEntrance(): void {
 export function settleSoil(): void {
   for (let z = 0; z < DEPTH; z++) {
     const grid = state.grids[z];
+    const ctx = state.soilCtxs[z];
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
 
     for (let vx = 0; vx < GRID_WIDTH; vx++) {
@@ -315,9 +282,12 @@ export function settleSoil(): void {
         if (grid[vy][vx] === 1 && grid[vy + 1][vx] === 0) {
           grid[vy][vx] = 0;
           grid[vy + 1][vx] = 1;
-          syncRegionToCanvas(z, vx, vy, vx, vy + 1);
+          ctx.clearRect(vx, vy, 1, 1);
+          ctx.fillStyle = 'white';
+          ctx.fillRect(vx, vy + 1, 1, 1);
         }
       }
     }
   }
 }
+
