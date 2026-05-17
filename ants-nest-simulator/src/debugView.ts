@@ -56,12 +56,12 @@ function fillDebugPixels(data: Uint8ClampedArray): void {
         r = 10; g = 10; b = 24;
       }
 
-      // Blend pheromone as yellow glow
-      if (maxPh > 0.002) {
-        const t = Math.min(1, maxPh * 4);
-        r = (r + (255 - r) * t * 0.9) | 0;
-        g = (g + (200 - g) * t * 0.55) | 0;
-        b = (b * (1 - t * 0.85)) | 0;
+      // Blend pheromone as yellow glow (sqrt curve to reveal faint trails)
+      if (maxPh > 0.0005) {
+        const t = Math.min(1, Math.sqrt(maxPh * 20));
+        r = (r + (255 - r) * t * 0.95) | 0;
+        g = (g + (210 - g) * t * 0.65) | 0;
+        b = (b * (1 - t * 0.9)) | 0;
       }
 
       data[idx] = r;
@@ -85,14 +85,14 @@ function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
         const ph = pheromone[z][phIdx];
         if (ph > maxPh) maxPh = ph;
       }
-      if (maxPh < 0.002) continue;
+      if (maxPh < 0.0005) continue;
 
-      const t = Math.min(1, maxPh * 4);
+      const t = Math.min(1, Math.sqrt(maxPh * 20));
       const idx = phIdx * 4;
       data[idx] = 255;
-      data[idx + 1] = (200 - t * 80) | 0;
+      data[idx + 1] = (210 - t * 90) | 0;
       data[idx + 2] = 0;
-      data[idx + 3] = (t * 165) | 0;
+      data[idx + 3] = (t * 220) | 0;
     }
   }
 }
