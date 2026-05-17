@@ -8,8 +8,18 @@ import { getGridType, getPheromone } from './grid';
 
 // Cached across frames to reduce GC pressure
 let _gridImgData: ImageData | null = null;
+let _gridCanvas: HTMLCanvasElement | null = null;
+let _gridCtx: CanvasRenderingContext2D | null = null;
 let _phCanvas: HTMLCanvasElement | null = null;
 let _phCtx: CanvasRenderingContext2D | null = null;
+
+function ensureGridCanvas(): void {
+  if (_gridCanvas) return;
+  _gridCanvas = document.createElement('canvas');
+  _gridCanvas.width = WIDTH;
+  _gridCanvas.height = HEIGHT;
+  _gridCtx = _gridCanvas.getContext('2d')!;
+}
 
 function ensurePhCanvas(): void {
   if (_phCanvas) return;
@@ -390,9 +400,16 @@ function drawEntranceIndicators(ctx: CanvasRenderingContext2D): void {
  * Pheromone is rendered last so it is visible even where ants overlap.
  */
 export function drawDebugFrame(ctx: CanvasRenderingContext2D): void {
-  if (!_gridImgData) _gridImgData = ctx.createImageData(WIDTH, HEIGHT);
+  // Route the grid bitmap through an offscreen canvas. Drawing the main canvas
+  // entirely via drawImage/fill/stroke (no direct putImageData) keeps the GPU
+  // compositor's draw order stable on Android Chrome, where putImageData mixed
+  // with subsequent drawing primitives can interleave incorrectly and let soil
+  // pixels flicker on top of the legend / pheromone.
+  ensureGridCanvas();
+  if (!_gridImgData) _gridImgData = _gridCtx!.createImageData(WIDTH, HEIGHT);
   fillGridPixels(_gridImgData.data);
-  ctx.putImageData(_gridImgData, 0, 0);
+  _gridCtx!.putImageData(_gridImgData, 0, 0);
+  ctx.drawImage(_gridCanvas!, 0, 0);
   if (VOXEL_SIZE >= MIN_VOXEL_SIZE_FOR_GRID_LINES) drawVoxelGridLines(ctx);
   drawGroundLine(ctx);
   drawEntranceIndicators(ctx);
