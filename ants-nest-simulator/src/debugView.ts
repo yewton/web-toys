@@ -58,7 +58,12 @@ function fillGridPixels(data: Uint8ClampedArray): void {
       let r: number, g: number, b: number;
       const yCenter = vy * VOXEL_SIZE + VOXEL_SIZE / 2;
 
+      const mask = (grids[0][vy][vx] === 0 ? 4 : 0)
+                 | (grids[1][vy][vx] === 0 ? 2 : 0)
+                 | (grids[2][vy][vx] === 0 ? 1 : 0);
+
       if (vy < groundVy) {
+        // Mounds & Sky
         const hasMound = grids[0][vy][vx] === 1 || grids[1][vy][vx] === 1 || grids[2][vy][vx] === 1;
         if (hasMound) {
           const d = yCenter / HEIGHT;
@@ -68,29 +73,20 @@ function fillGridPixels(data: Uint8ClampedArray): void {
         } else {
           r = 10; g = 10; b = 24;
         }
+      } else if (mask > 0) {
+        // Any excavation (below ground) shows the uniform dig mask
+        [r, g, b] = DIG_COLORS[mask];
       } else if (vy < protectedVyEnd) {
+        // Solid Protected Zone
         const allProtected = grids[0][vy][vx] === 3 && grids[1][vy][vx] === 3 && grids[2][vy][vx] === 3;
-        const allAir = grids[0][vy][vx] === 0 && grids[1][vy][vx] === 0 && grids[2][vy][vx] === 0;
-
-        if (allAir) {
-          r = 0; g = 0; b = 0;
-        } else if (allProtected) {
-          r = 130; g =  25; b =  25;
-        } else {
-          r =  60; g = 190; b =  80; // entrance or partially dug
-        }
+        if (allProtected) { r = 130; g =  25; b =  25; }
+        else              { r =  60; g = 190; b =  80; } // Mixed / Diggable but solid
       } else {
-        const mask = (grids[0][vy][vx] === 0 ? 4 : 0)
-                   | (grids[1][vy][vx] === 0 ? 2 : 0)
-                   | (grids[2][vy][vx] === 0 ? 1 : 0);
-        if (mask > 0) {
-          [r, g, b] = DIG_COLORS[mask];
-        } else {
-          const d = yCenter / HEIGHT;
-          r = (105 + d * 45) | 0;
-          g = ( 62 + d * 28) | 0;
-          b = ( 22 + d * 18) | 0;
-        }
+        // Solid Deep Soil
+        const d = yCenter / HEIGHT;
+        r = (105 + d * 45) | 0;
+        g = ( 62 + d * 28) | 0;
+        b = ( 22 + d * 18) | 0;
       }
 
       // Fill the VOXEL_SIZE×VOXEL_SIZE block
