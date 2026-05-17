@@ -80,18 +80,19 @@ function applyToVoxelCircle(
  */
 function syncRegionToCanvas(z: number, minVx: number, minVy: number, maxVx: number, maxVy: number): void {
   const ctx = state.soilCtxs[z];
-  const radius = VOXEL_SIZE_PX * 0.85; // Slight overlap for organic look
+  const radius = VOXEL_SIZE_PX * 1.25; // Significant overlap for metaball effect
 
-  // Clear the affected area (including fringe margin)
-  const clearX = Math.max(0, (minVx - 1) * VOXEL_SIZE_PX);
-  const clearY = Math.max(0, (minVy - 1) * VOXEL_SIZE_PX);
-  const clearW = (maxVx - minVx + 3) * VOXEL_SIZE_PX;
-  const clearH = (maxVy - minVy + 3) * VOXEL_SIZE_PX;
+  // Clear a slightly larger area to account for the larger radius
+  const margin = 2;
+  const clearX = Math.max(0, (minVx - margin) * VOXEL_SIZE_PX);
+  const clearY = Math.max(0, (minVy - margin) * VOXEL_SIZE_PX);
+  const clearW = (maxVx - minVx + margin * 2 + 1) * VOXEL_SIZE_PX;
+  const clearH = (maxVy - minVy + margin * 2 + 1) * VOXEL_SIZE_PX;
   ctx.clearRect(clearX, clearY, clearW, clearH);
 
   ctx.fillStyle = 'white';
-  for (let vy = Math.max(0, minVy - 1); vy <= Math.min(GRID_HEIGHT - 1, maxVy + 1); vy++) {
-    for (let vx = Math.max(0, minVx - 1); vx <= Math.min(GRID_WIDTH - 1, maxVx + 1); vx++) {
+  for (let vy = Math.max(0, minVy - margin); vy <= Math.min(GRID_HEIGHT - 1, maxVy + margin); vy++) {
+    for (let vx = Math.max(0, minVx - margin); vx <= Math.min(GRID_WIDTH - 1, maxVx + margin); vx++) {
       if (state.grids[z][vy][vx] > 0) {
         ctx.beginPath();
         ctx.arc(

@@ -30,11 +30,17 @@ function renderNormal(ctx: CanvasRenderingContext2D): void {
   for (const ant of state.ants) antsByZ[ant.z].push(ant);
 
   for (let z = 0; z < DEPTH; z++) {
-    // Composite soil using the mask
+    // Composite soil using the mask with metaball-style smoothing
     offscreenCtx.clearRect(0, 0, WIDTH, HEIGHT);
-    offscreenCtx.drawImage(gradientCanvas, 0, 0);
-    offscreenCtx.globalCompositeOperation = 'destination-in';
+
+    // Apply smooth filter to the mask before clipping the gradient
+    offscreenCtx.save();
+    offscreenCtx.filter = 'blur(2.0px) contrast(300%)';
     offscreenCtx.drawImage(soilCanvases[z], 0, 0);
+    offscreenCtx.restore();
+
+    offscreenCtx.globalCompositeOperation = 'source-in';
+    offscreenCtx.drawImage(gradientCanvas, 0, 0);
     offscreenCtx.globalCompositeOperation = 'source-over';
 
     ctx.globalAlpha = 0.4;
