@@ -2,6 +2,7 @@ import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH } from './constants
 import { state } from './state';
 import { Ant } from './Ant';
 import { makeDiggable, evaporatePheromone } from './grid';
+import { drawDebugFrame, drawDebugOverlay } from './debugView';
 
 let _ctx: CanvasRenderingContext2D | null = null;
 
@@ -10,15 +11,31 @@ function physicsStep(): void {
   evaporatePheromone();
 }
 
+function renderNormal(ctx: CanvasRenderingContext2D): void {
+  const antsByZ: Ant[][] = Array.from({ length: DEPTH }, () => []);
+  for (const ant of state.ants) antsByZ[ant.z].push(ant);
+  for (let z = 0; z < DEPTH; z++) {
+    ctx.drawImage(state.soilCanvases[z], 0, 0);
+    for (const ant of antsByZ[z]) ant.draw(ctx, ant === state.highlightedAnt);
+  }
+}
+
 function renderFrame(): void {
   if (!_ctx) return;
   for (const ant of state.ants) ant.updateAnimation();
   _ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  const antsByZ: Ant[][] = Array.from({ length: DEPTH }, () => []);
-  for (const ant of state.ants) antsByZ[ant.z].push(ant);
-  for (let z = 0; z < DEPTH; z++) {
-    _ctx.drawImage(state.soilCanvases[z], 0, 0);
-    for (const ant of antsByZ[z]) ant.draw(_ctx, ant === state.highlightedAnt);
+
+  switch (state.viewMode) {
+    case 'normal':
+      renderNormal(_ctx);
+      break;
+    case 'debug':
+      drawDebugFrame(_ctx);
+      break;
+    case 'overlay':
+      renderNormal(_ctx);
+      drawDebugOverlay(_ctx);
+      break;
   }
 }
 

@@ -60,6 +60,31 @@
           </svg>
           Flatten Soil (Reset)
         </button>
+
+        <div>
+          <div class="flex justify-between mb-1">
+            <label class="text-sm font-medium text-gray-700 flex items-center">
+              <span class="mr-2">👁️</span> View Mode
+            </label>
+          </div>
+          <div class="flex gap-1">
+            <button data-view-mode="normal"
+                    class="view-btn view-btn-active flex-1 py-2 px-1 text-xs font-semibold rounded-lg transition-colors duration-150">
+              Normal
+            </button>
+            <button data-view-mode="debug"
+                    class="view-btn view-btn-inactive flex-1 py-2 px-1 text-xs font-semibold rounded-lg transition-colors duration-150">
+              Internal
+            </button>
+            <button data-view-mode="overlay"
+                    class="view-btn view-btn-inactive flex-1 py-2 px-1 text-xs font-semibold rounded-lg transition-colors duration-150">
+              Overlay
+            </button>
+          </div>
+          <p class="mt-1 text-xs text-gray-400">
+            Internal: pheromone heatmap + sensor rays &nbsp;|&nbsp; Overlay: both combined
+          </p>
+        </div>
       </div>
     </div>
   </div>
