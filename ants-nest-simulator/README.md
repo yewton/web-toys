@@ -45,7 +45,7 @@ The substrate is stored as `state.grids[z][vy][vx]` where each cell represents a
 | `1` | Soil — diggable. A single voxel type for both the original substrate and ant-deposited material |
 | `3` | Protected zone (top `PROTECTED_DEPTH = 6` px, not diggable) |
 
-Rendering: a single `soilCanvas` per Z layer holds the entire substrate at full pixel resolution. `digGel` cuts via `destination-out` using a pixel-fine circle of `DIG_RADIUS_PX`, while updating *all voxels the circle touches* in the underlying grid. Deposits (`dropDirtInside`, `fillDirt`, `dropDirt`) paint pixel circles using `soilFillStyle(y)`, the same gradient ramp as the initial fill. The lack of a separate dirt layer is what makes mounds and tunnel re-fills visually seamless with the surrounding substrate.
+Rendering: each Z layer has a per-layer binary opaque-white `soilCanvas` *mask* (white = soil, transparent = air) plus a shared y-axis `gradientCanvas` that holds the color/alpha ramp. Each frame, the mask is composited with the gradient via `source-in` into an offscreen `compositeCanvas`, and the result is blitted onto the main canvas. Because every soil pixel — original substrate, ant-deposited mound, redeposited tunnel fill — is colored by the same gradient sampled at its own y, deposits blend seamlessly with the surrounding substrate. `digGel` punches the mask via `destination-out`; `dropDirtInside` / `fillDirt` / `dropDirt` add to the mask with opaque-white circles. The mask geometry is updated at full pixel resolution so tunnel walls stay smooth even though the underlying grid is coarse.
 
 ### Pheromones
 
