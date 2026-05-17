@@ -1,7 +1,20 @@
 import { defineConfig } from 'vitest/config';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE_PATH ?? (mode === 'production' ? '/web-toys/' : '/'),
+  plugins: [
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: false,
+      injectRegister: 'inline',
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+        navigateFallback: null,
+        cleanupOutdatedCaches: true,
+      },
+    }),
+  ],
   build: {
     target: 'es2020',
     rollupOptions: {
