@@ -66,7 +66,8 @@ export class Ant {
 
   update(): void {
     const currentGridType = getGridType(this.x, this.y, this.z);
-    if (currentGridType === 2 && this.y < GROUND_LEVEL) {
+    if (currentGridType === 1 && this.y < GROUND_LEVEL) {
+      // Ant got buried inside a surface mound — dig itself free.
       digGel(this.x, this.y, this.z, 2.5);
     } else if (currentGridType === 3) {
       this.y -= 2.0;
@@ -129,7 +130,7 @@ export class Ant {
     const isDeadEnd = leftVal === 1 && rightVal === 1;
     let digProb = 0;
 
-    if (!this.hasDirt && (frontType === 1 || frontType === 2)) {
+    if (!this.hasDirt && frontType === 1) {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       const inWideSpace = this.y >= GROUND_LEVEL + 15 ? this.isWideSpace() : false;
 
@@ -176,8 +177,8 @@ export class Ant {
   private avoidObstacle(frontType: number, leftVal: number, rightVal: number): void {
     this.turnCount++;
 
-    if ((frontType === 3 || frontType === 2) && this.y < GROUND_LEVEL + 30) {
-      if (frontType === 3 && !this.hasDirt) this.surfaceFrustration++;
+    if (frontType === 3 && this.y < GROUND_LEVEL + 30) {
+      if (!this.hasDirt) this.surfaceFrustration++;
       const dir = Math.random() > 0.5 ? 0 : Math.PI;
       this.angle = dir + (Math.random() - 0.5) * 0.4;
       this.x += Math.cos(this.angle) * this.speed;

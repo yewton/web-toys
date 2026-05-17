@@ -17,8 +17,7 @@ function renderFrame(): void {
   const antsByZ: Ant[][] = Array.from({ length: DEPTH }, () => []);
   for (const ant of state.ants) antsByZ[ant.z].push(ant);
   for (let z = 0; z < DEPTH; z++) {
-    _ctx.drawImage(state.gelCanvases[z], 0, 0);
-    _ctx.drawImage(state.dirtCanvases[z], 0, 0);
+    _ctx.drawImage(state.soilCanvases[z], 0, 0);
     for (const ant of antsByZ[z]) ant.draw(_ctx);
   }
 }
@@ -26,29 +25,22 @@ function renderFrame(): void {
 export function initSimulation(): void {
   state.grids = [];
   state.pheromone = [];
-  state.gelCanvases = [];
-  state.gelCtxs = [];
-  state.dirtCanvases = [];
-  state.dirtCtxs = [];
+  state.soilCanvases = [];
+  state.soilCtxs = [];
 
   for (let z = 0; z < DEPTH; z++) {
     state.grids[z] = Array.from({ length: HEIGHT }, () => new Uint8Array(WIDTH));
     state.pheromone.push(new Float32Array(WIDTH * HEIGHT));
 
-    const gCanvas = document.createElement('canvas');
-    gCanvas.width = WIDTH;
-    gCanvas.height = HEIGHT;
-    const gCtx = gCanvas.getContext('2d', { willReadFrequently: true })!;
+    const sCanvas = document.createElement('canvas');
+    sCanvas.width = WIDTH;
+    sCanvas.height = HEIGHT;
+    const sCtx = sCanvas.getContext('2d', { willReadFrequently: true })!;
 
-    const dCanvas = document.createElement('canvas');
-    dCanvas.width = WIDTH;
-    dCanvas.height = HEIGHT;
-    const dCtx = dCanvas.getContext('2d')!;
-
-    const gradient = gCtx.createLinearGradient(0, GROUND_LEVEL, 0, HEIGHT);
+    const gradient = sCtx.createLinearGradient(0, GROUND_LEVEL, 0, HEIGHT);
     gradient.addColorStop(0, 'rgba(0, 180, 255, 0.35)');
     gradient.addColorStop(1, 'rgba(0, 120, 230, 0.45)');
-    gCtx.fillStyle = gradient;
+    sCtx.fillStyle = gradient;
 
     for (let y = 0; y < HEIGHT; y++) {
       for (let x = 0; x < WIDTH; x++) {
@@ -57,12 +49,10 @@ export function initSimulation(): void {
         }
       }
     }
-    gCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
+    sCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
 
-    state.gelCanvases.push(gCanvas);
-    state.gelCtxs.push(gCtx);
-    state.dirtCanvases.push(dCanvas);
-    state.dirtCtxs.push(dCtx);
+    state.soilCanvases.push(sCanvas);
+    state.soilCtxs.push(sCtx);
   }
 
   const entranceCount = 2 + Math.floor(Math.random() * 3);
