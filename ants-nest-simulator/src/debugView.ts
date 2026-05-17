@@ -263,6 +263,49 @@ function drawGroundLine(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 
+// ─── ENTRANCE INDICATORS ──────────────────────────────────────────────────────
+
+function drawEntranceIndicators(ctx: CanvasRenderingContext2D): void {
+  const { grids } = state;
+
+  // Mark entrance columns: protected-zone row that is not type 3
+  const entrance = new Uint8Array(WIDTH);
+  for (let x = 0; x < WIDTH; x++) {
+    for (let z = 0; z < DEPTH; z++) {
+      if (grids[z][GROUND_LEVEL][x] !== 3) { entrance[x] = 1; break; }
+    }
+  }
+
+  ctx.save();
+  ctx.fillStyle = '#3cbe50';
+  ctx.strokeStyle = '#3cbe50';
+  ctx.lineWidth = 1.5;
+
+  // Scan for clusters, draw one arrow per cluster at its center
+  let i = 0;
+  while (i < WIDTH) {
+    if (!entrance[i]) { i++; continue; }
+    let j = i;
+    while (j < WIDTH && entrance[j]) j++;
+    const cx = (i + j - 1) / 2;
+    // Stem
+    ctx.beginPath();
+    ctx.moveTo(cx, GROUND_LEVEL - 13);
+    ctx.lineTo(cx, GROUND_LEVEL - 6);
+    ctx.stroke();
+    // Arrowhead triangle
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, GROUND_LEVEL - 8);
+    ctx.lineTo(cx + 4, GROUND_LEVEL - 8);
+    ctx.lineTo(cx, GROUND_LEVEL - 1);
+    ctx.closePath();
+    ctx.fill();
+    i = j;
+  }
+
+  ctx.restore();
+}
+
 // ─── PUBLIC API ───────────────────────────────────────────────────────────────
 
 /**
@@ -275,6 +318,7 @@ export function drawDebugFrame(ctx: CanvasRenderingContext2D): void {
   fillGridPixels(_gridImgData.data);
   ctx.putImageData(_gridImgData, 0, 0);
   drawGroundLine(ctx);
+  drawEntranceIndicators(ctx);
   drawAnts(ctx, true);
   drawPheromoneLayer(ctx);   // ← after ants so pheromone is never hidden
   drawLegend(ctx);
