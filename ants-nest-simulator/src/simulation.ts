@@ -18,7 +18,7 @@ function renderFrame(): void {
   for (const ant of state.ants) antsByZ[ant.z].push(ant);
   for (let z = 0; z < DEPTH; z++) {
     _ctx.drawImage(state.soilCanvases[z], 0, 0);
-    for (const ant of antsByZ[z]) ant.draw(_ctx);
+    for (const ant of antsByZ[z]) ant.draw(_ctx, ant === state.highlightedAnt);
   }
 }
 
@@ -62,6 +62,7 @@ export function initSimulation(): void {
   }
 
   state.ants = [];
+  state.highlightedAnt = null;
   adjustAnts();
 }
 
@@ -71,7 +72,8 @@ export function adjustAnts(): void {
     state.ants.push(new Ant(Math.random() * WIDTH, Math.random() * (GROUND_LEVEL - 10) + 5, z));
   }
   while (state.ants.length > state.targetAntCount) {
-    state.ants.pop();
+    const removed = state.ants.pop();
+    if (removed === state.highlightedAnt) state.highlightedAnt = null;
   }
 }
 
