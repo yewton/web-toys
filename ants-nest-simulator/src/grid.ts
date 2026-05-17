@@ -268,7 +268,7 @@ export function attemptCreateNewEntrance(): void {
 }
 /**
  * Simple settling logic: loose soil (Type 1) above ground level falls down if there is air below it.
- * This prevents "floating" mounds when ants dig out the base.
+ * Also slides diagonally to form natural "mountain-shaped" mounds (avalanche logic).
  */
 export function settleSoil(): void {
   for (let z = 0; z < DEPTH; z++) {
@@ -276,15 +276,37 @@ export function settleSoil(): void {
     const ctx = state.soilCtxs[z];
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
 
-    for (let vx = 0; vx < GRID_WIDTH; vx++) {
-      // Top-down scan to allow "multi-step" falling in one pass
-      for (let vy = 0; vy < groundVy; vy++) {
-        if (grid[vy][vx] === 1 && grid[vy + 1][vx] === 0) {
+    // Scan from bottom-up to make the movement look more gradual and natural.
+    for (let vy = groundVy - 1; vy >= 0; vy--) {
+      // Randomize X scan direction to avoid lateral bias
+      const startVx = Math.random() < 0.5 ? 0 : GRID_WIDTH - 1;
+      const endVx = startVx === 0 ? GRID_WIDTH : -1;
+      const stepVx = startVx === 0 ? 1 : -1;
+
+      for (let vx = startVx; vx !== endVx; vx += stepVx) {
+        if (grid[vy][vx] === 1) {
+          let targetX = vx;
+          let targetY = vy + 1;
+
+          if (grid[targetY][vx] === 0) {
+            // Fall straight down
+          } else {
+            // Try diagonal slide (slope formation)
+            const canLeft = vx > 0 && grid[targetY][vx - 1] === 0;
+            const canRight = vx < GRID_WIDTH - 1 && grid[targetY][vx + 1] === 0;
+
+            if (canLeft && canRight) targetX = vx + (Math.random() < 0.5 ? -1 : 1);
+            else if (canLeft) targetX = vx - 1;
+            else if (canRight) targetX = vx + 1;
+            else continue; // stable
+          }
+
+          // Move soil in grid and mask
           grid[vy][vx] = 0;
-          grid[vy + 1][vx] = 1;
+          grid[targetY][targetX] = 1;
           ctx.clearRect(vx, vy, 1, 1);
           ctx.fillStyle = 'white';
-          ctx.fillRect(vx, vy + 1, 1, 1);
+          ctx.fillRect(targetX, targetY, 1, 1);
         }
       }
     }
