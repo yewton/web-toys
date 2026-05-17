@@ -36,10 +36,6 @@ export const GRID_HEIGHT = HEIGHT / VOXEL_SIZE;
 export const DIG_RADIUS_PX = 2.2;
 /** How far in front of the ant the dig is centered, in pixels. */
 export const DIG_REACH_PX = 3.0;
-/** Radius of one deposited soil grain, in pixels. */
-export const DROP_GRAIN_RADIUS_PX = 2.2;
-/** Lateral spread of mound stacking, in pixels (half-width of column jitter). */
-export const DROP_JITTER_PX = 6.0;
 /** Below this grain count, debug voxel-boundary lines are skipped (too dense to read). */
 export const MIN_VOXEL_SIZE_FOR_GRID_LINES = 3;
 

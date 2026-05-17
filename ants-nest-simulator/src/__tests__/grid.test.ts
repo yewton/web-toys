@@ -42,6 +42,7 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
     arc: () => {},
     fill: () => {},
     fillRect: () => {},
+    clearRect: () => {},
     fillStyle: '',
     globalCompositeOperation: 'source-over',
   };
