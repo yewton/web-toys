@@ -1,4 +1,4 @@
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL } from './constants';
+import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH } from './constants';
 import { state } from './state';
 import { getGridType, getPheromone } from './grid';
 
@@ -39,6 +39,9 @@ function fillGridPixels(data: Uint8ClampedArray): void {
       let r: number, g: number, b: number;
       if (maxType === 3) {
         r = 130; g = 25; b = 25;
+      } else if (y >= GROUND_LEVEL && y < GROUND_LEVEL + PROTECTED_DEPTH) {
+        // Protected zone opened as entrance (type 3 → 0/1)
+        r = 60; g = 190; b = 80;
       } else if (y >= GROUND_LEVEL && minType === 0) {
         // At least one Z-layer excavated — slate-blue void
         r = 35; g = 100; b = 150;
@@ -222,6 +225,7 @@ const LEGEND: [string, string][] = [
   ['#236496', 'Tunnel (excavated)'],
   ['#7a5230', 'Soil'],
   ['#8c1e1e', 'Protected zone'],
+  ['#3cbe50', 'Entrance'],
   ['#6495ed', 'Ring: Z back'],
   ['#c8c8c8', 'Ring: Z mid'],
   ['#ffd700', 'Ring: Z front'],
