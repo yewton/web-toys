@@ -55,7 +55,10 @@ function fillGridPixels(data: Uint8ClampedArray): void {
   }
 }
 
-/** Pheromone heatmap into the offscreen canvas's pixel data (RGBA with alpha) */
+/**
+ * Pheromone source pixels for the offscreen canvas.
+ * Uses near-full alpha so the CSS blur spreads a strong glow outward.
+ */
 function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
   const { pheromone } = state;
 
@@ -71,23 +74,49 @@ function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
       }
       if (maxPh < 0.0005) continue;
 
+      // High source alpha so blur spreads a visible cloud even for faint trails
       const t = Math.min(1, Math.sqrt(maxPh * 20));
       const idx = phIdx * 4;
       data[idx] = 255;
-      data[idx + 1] = (210 - t * 90) | 0;
+      data[idx + 1] = (210 - t * 60) | 0; // warm amber → yellow
       data[idx + 2] = 0;
-      data[idx + 3] = (t * 220) | 0;
+      data[idx + 3] = (t * 255) | 0;
     }
   }
 }
 
-/** Composite the pheromone offscreen canvas onto ctx */
+/**
+ * Composite pheromone onto ctx using three blur passes (wide haze → mid glow → tight core)
+ * plus a sin-based pulse and a slow lateral drift for a smoke-like appearance.
+ */
 function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
   ensurePhCanvas();
   if (!_phImgData) _phImgData = _phCtx!.createImageData(WIDTH, HEIGHT);
   fillPheromoneOverlayPixels(_phImgData.data);
   _phCtx!.putImageData(_phImgData, 0, 0);
+
+  const now = Date.now();
+  const pulse = 0.72 + 0.28 * Math.sin(now / 550);  // ~1.8 Hz oscillation
+  const drift = Math.sin(now / 1800) * 2;            // slow ±2 px lateral drift
+
+  ctx.save();
+
+  // Pass 1 — wide ambient haze
+  ctx.globalAlpha = 0.32 * pulse;
+  ctx.filter = 'blur(14px)';
+  ctx.drawImage(_phCanvas!, drift, 0);
+
+  // Pass 2 — mid glow
+  ctx.globalAlpha = 0.52 * pulse;
+  ctx.filter = 'blur(7px)';
   ctx.drawImage(_phCanvas!, 0, 0);
+
+  // Pass 3 — tight luminous core
+  ctx.globalAlpha = 0.75 * pulse;
+  ctx.filter = 'blur(2px)';
+  ctx.drawImage(_phCanvas!, 0, 0);
+
+  ctx.restore();
 }
 
 // ─── ANT OVERLAYS ─────────────────────────────────────────────────────────────
