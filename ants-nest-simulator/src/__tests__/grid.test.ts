@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from '../state';
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH, PHEROMONE_DECAY } from '../constants';
+import {
+  WIDTH,
+  HEIGHT,
+  DEPTH,
+  GROUND_LEVEL,
+  PROTECTED_DEPTH,
+  PHEROMONE_DECAY,
+  VOXEL_SIZE,
+  GRID_WIDTH,
+  GRID_HEIGHT,
+} from '../constants';
 import {
   dirtColor,
   getGridType,
@@ -17,12 +27,12 @@ import {
 
 function makeGrids() {
   return Array.from({ length: DEPTH }, () =>
-    Array.from({ length: HEIGHT }, () => new Uint8Array(WIDTH)),
+    Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH)),
   );
 }
 
 function makePheromone() {
-  return Array.from({ length: DEPTH }, () => new Float32Array(WIDTH * HEIGHT));
+  return Array.from({ length: DEPTH }, () => new Float32Array(GRID_WIDTH * GRID_HEIGHT));
 }
 
 function makeCanvasCtx(): CanvasRenderingContext2D {
@@ -37,6 +47,9 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
   };
   return ctx as unknown as CanvasRenderingContext2D;
 }
+
+/** Helpers: convert pixel → voxel for setting/reading grid cells in tests. */
+const px2v = (p: number) => Math.floor(p / VOXEL_SIZE);
 
 beforeEach(() => {
   state.grids = makeGrids();
@@ -74,8 +87,8 @@ describe('getGridType', () => {
     expect(getGridType(0, 0, 0)).toBe(0);
   });
 
-  it('returns the value written into grids', () => {
-    state.grids[1][10][20] = 3;
+  it('returns the value written into voxel grid via pixel-coord lookup', () => {
+    state.grids[1][px2v(10)][px2v(20)] = 3;
     expect(getGridType(20, 10, 1)).toBe(3);
   });
 
@@ -103,8 +116,8 @@ describe('getGridType', () => {
     expect(getGridType(5, -1, 0)).toBe(0);
   });
 
-  it('floors fractional coordinates', () => {
-    state.grids[0][3][7] = 2;
+  it('maps fractional pixel coordinates to their voxel', () => {
+    state.grids[0][px2v(3.9)][px2v(7.9)] = 2;
     expect(getGridType(7.9, 3.9, 0)).toBe(2);
   });
 });
@@ -115,38 +128,42 @@ describe('digGel', () => {
     expect(() => digGel(10, 10, DEPTH, 3)).not.toThrow();
   });
 
-  it('excavates soil cells (type 1) to air (0)', () => {
-    state.grids[0][10][10] = 1;
-    digGel(10, 10, 0, 3);
-    expect(state.grids[0][10][10]).toBe(0);
+  it('excavates the voxel containing the circle center', () => {
+    const cx = 40, cy = 80; // voxel (10, 20)
+    state.grids[0][px2v(cy)][px2v(cx)] = 1;
+    digGel(cx, cy, 0, 3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(0);
   });
 
-  it('leaves protected cells (type 3) unchanged', () => {
-    state.grids[0][10][10] = 3;
-    digGel(10, 10, 0, 3);
-    expect(state.grids[0][10][10]).toBe(3);
+  it('leaves protected voxels (type 3) unchanged', () => {
+    const cx = 40, cy = 80;
+    state.grids[0][px2v(cy)][px2v(cx)] = 3;
+    digGel(cx, cy, 0, 3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
   });
 
-  it('does not affect cells outside the radius', () => {
-    const farX = 30;
-    state.grids[0][10][farX] = 1;
-    digGel(10, 10, 0, 3);
-    expect(state.grids[0][10][farX]).toBe(1);
+  it('does not affect voxels well outside the radius', () => {
+    const far = 30; // 30 voxels away in x — well past any reasonable radius
+    state.grids[0][20][far] = 1;
+    digGel(40, 80, 0, 3);
+    expect(state.grids[0][20][far]).toBe(1);
   });
 
-  it('handles cells at grid boundaries where some loop positions are out-of-bounds', () => {
-    // Center at (0,0) with radius=3 → some cells have y<0 or x<0 (out-of-bounds)
+  it('handles a circle that overflows the grid edge', () => {
     state.grids[0][0][0] = 1;
     digGel(0, 0, 0, 3);
-    expect(state.grids[0][0][0]).toBe(0); // center cell excavated
+    expect(state.grids[0][0][0]).toBe(0);
   });
 
-  it('excavates multiple soil cells in the same call', () => {
-    state.grids[0][10][9] = 1;
-    state.grids[0][10][11] = 1;
-    digGel(10, 10, 0, 5);
-    expect(state.grids[0][10][9]).toBe(0);
-    expect(state.grids[0][10][11]).toBe(0);
+  it('excavates multiple voxels for a larger radius', () => {
+    const cx = 40, cy = 80;
+    // Seed a 3-voxel-wide band
+    for (let dvx = -2; dvx <= 2; dvx++) {
+      state.grids[0][px2v(cy)][px2v(cx) + dvx] = 1;
+    }
+    digGel(cx, cy, 0, 8); // 2 voxels radius
+    expect(state.grids[0][px2v(cy)][px2v(cx) - 1]).toBe(0);
+    expect(state.grids[0][px2v(cy)][px2v(cx) + 1]).toBe(0);
   });
 });
 
@@ -156,142 +173,131 @@ describe('dropDirtInside', () => {
     expect(() => dropDirtInside(50, GROUND_LEVEL + 10, DEPTH)).not.toThrow();
   });
 
-  it('places gel (type 1) in empty cells at or below GROUND_LEVEL', () => {
-    const cx = 50, cy = GROUND_LEVEL + 5;
+  it('places soil in empty voxels at or below GROUND_LEVEL', () => {
+    const cx = 60, cy = GROUND_LEVEL + 12;
     dropDirtInside(cx, cy, 0);
-    // Center cell should be filled
-    expect(state.grids[0][cy][cx]).toBe(1);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(1);
   });
 
-  it('does not modify cells above GROUND_LEVEL', () => {
-    dropDirtInside(50, GROUND_LEVEL - 10, 0);
-    for (let y = 0; y < GROUND_LEVEL; y++) {
-      for (let x = 0; x < WIDTH; x++) {
-        expect(state.grids[0][y][x]).toBe(0);
+  it('does not modify voxels above GROUND_LEVEL', () => {
+    dropDirtInside(60, GROUND_LEVEL - 20, 0);
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    for (let vy = 0; vy < groundVy; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        expect(state.grids[0][vy][vx]).toBe(0);
       }
     }
   });
 
-  it('does not overwrite non-empty cells', () => {
-    const cx = 50, cy = GROUND_LEVEL + 5;
-    state.grids[0][cy][cx] = 3;
+  it('does not overwrite non-empty voxels', () => {
+    const cx = 60, cy = GROUND_LEVEL + 12;
+    state.grids[0][px2v(cy)][px2v(cx)] = 3;
     dropDirtInside(cx, cy, 0);
-    expect(state.grids[0][cy][cx]).toBe(3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
   });
 });
 
 describe('fillDirt', () => {
   it('ignores out-of-bounds z', () => {
-    expect(() => fillDirt(10, 10, -1, 3)).not.toThrow();
-    expect(() => fillDirt(10, 10, DEPTH, 3)).not.toThrow();
+    expect(() => fillDirt(40, 80, -1, 3)).not.toThrow();
+    expect(() => fillDirt(40, 80, DEPTH, 3)).not.toThrow();
   });
 
-  it('fills empty cells in radius with soil (type 1)', () => {
-    const cx = 50, cy = 50, radius = 3;
-    fillDirt(cx, cy, 0, radius);
-    expect(state.grids[0][cy][cx]).toBe(1);
+  it('fills empty voxels in radius with soil (type 1)', () => {
+    const cx = 60, cy = 60;
+    fillDirt(cx, cy, 0, 3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(1);
   });
 
-  it('does not overwrite non-empty cells', () => {
-    state.grids[0][50][50] = 3;
-    fillDirt(50, 50, 0, 3);
-    expect(state.grids[0][50][50]).toBe(3);
+  it('does not overwrite non-empty voxels', () => {
+    const cx = 60, cy = 60;
+    state.grids[0][px2v(cy)][px2v(cx)] = 3;
+    fillDirt(cx, cy, 0, 3);
+    expect(state.grids[0][px2v(cy)][px2v(cx)]).toBe(3);
   });
 
-  it('does not modify cells outside the radius', () => {
-    const cx = 50, cy = 50, radius = 1;
-    fillDirt(cx, cy, 0, radius);
-    // Cell at (cx+5, cy) is well outside radius=1
-    expect(state.grids[0][cy][cx + 5]).toBe(0);
+  it('does not modify voxels well outside the radius', () => {
+    fillDirt(40, 40, 0, 1);
+    // 10 voxels away
+    expect(state.grids[0][10][20]).toBe(0);
   });
 
-  it('fills cells on all z layers correctly', () => {
-    fillDirt(50, 50, 1, 3);
-    expect(state.grids[1][50][50]).toBe(1);
-    expect(state.grids[0][50][50]).toBe(0); // other z layers untouched
+  it('fills voxels on the requested z layer only', () => {
+    fillDirt(60, 60, 1, 3);
+    expect(state.grids[1][px2v(60)][px2v(60)]).toBe(1);
+    expect(state.grids[0][px2v(60)][px2v(60)]).toBe(0);
   });
 });
 
-describe('dropDirt', () => {
-  function findSoil(z: number, yMin: number, yMax: number, xMin = 0, xMax = WIDTH): boolean {
-    for (let x = xMin; x < xMax; x++) {
-      for (let y = yMin; y < yMax; y++) {
-        if (state.grids[z][y][x] === 1) return true;
+describe('dropDirt (simplified: stack above the column the ant is on)', () => {
+  function anyNewSoil(z: number, vyMin: number, vyMax: number, preExisting: Set<number>): boolean {
+    for (let vy = vyMin; vy <= vyMax; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        if (state.grids[z][vy][vx] === 1 && !preExisting.has(vy * GRID_WIDTH + vx)) return true;
       }
     }
     return false;
   }
 
-  it('places soil on a type-3 protected surface at GROUND_LEVEL', () => {
+  it('places soil above a protected substrate at GROUND_LEVEL', () => {
     const z = 0;
-    for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][GROUND_LEVEL][x] = 3;
-    }
-    dropDirt(WIDTH / 2, 0, z);
-    expect(findSoil(z, GROUND_LEVEL - 6, GROUND_LEVEL)).toBe(true);
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][groundVy][vx] = 3;
+    const pre = new Set<number>();
+    dropDirt(WIDTH / 2, 0, z, 3);
+    expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
   });
 
-  it('places soil on a type-1 soil surface at GROUND_LEVEL', () => {
+  it('places soil above an existing soil surface', () => {
     const z = 0;
-    // Track which cells were pre-seeded so we can ignore them when looking for new fill.
-    const preExisting = new Set<number>();
-    for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][GROUND_LEVEL][x] = 1;
-      preExisting.add(GROUND_LEVEL * WIDTH + x);
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    const pre = new Set<number>();
+    for (let vx = 0; vx < GRID_WIDTH; vx++) {
+      state.grids[z][groundVy][vx] = 1;
+      pre.add(groundVy * GRID_WIDTH + vx);
     }
-    dropDirt(WIDTH / 2, 0, z);
-    let foundNew = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = GROUND_LEVEL - 6; y < GROUND_LEVEL; y++) {
-        if (state.grids[z][y][x] === 1 && !preExisting.has(y * WIDTH + x)) {
-          foundNew = true;
-        }
-      }
-    }
-    expect(foundNew).toBe(true);
+    dropDirt(WIDTH / 2, 0, z, 3);
+    expect(anyNewSoil(z, 0, groundVy - 1, pre)).toBe(true);
   });
 
-  it('discards the dirt on a fully empty grid', () => {
+  it('abandons the drop when there is no solid below the ant', () => {
     const z = 0;
-    dropDirt(WIDTH / 2, 0, z);
-    expect(findSoil(z, 0, HEIGHT)).toBe(false);
+    dropDirt(WIDTH / 2, 0, z, 5);
+    let anySoil = false;
+    for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        if (state.grids[z][vy][vx] !== 0) anySoil = true;
+      }
+    }
+    expect(anySoil).toBe(false);
   });
 
-  it('discards the dirt when the only solid sits deep below the surface (looks like tunnel interior)', () => {
+  it('refuses to stack higher than the mound cap', () => {
     const z = 0;
-    const preExisting = new Set<number>();
-    for (let x = 0; x < WIDTH; x++) {
-      state.grids[z][HEIGHT - 1][x] = 1;
-      preExisting.add((HEIGHT - 1) * WIDTH + x);
+    const capVy = Math.floor(20 / VOXEL_SIZE);
+    for (let vy = capVy; vy < GRID_HEIGHT; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) state.grids[z][vy][vx] = 1;
     }
-    dropDirt(WIDTH / 2, 0, z);
-    let foundNew = false;
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = 0; y < HEIGHT; y++) {
-        if (state.grids[z][y][x] === 1 && !preExisting.has(y * WIDTH + x)) {
-          foundNew = true;
-        }
-      }
-    }
-    expect(foundNew).toBe(false);
+    const before = countSoil(z);
+    dropDirt(WIDTH / 2, 0, z, 10);
+    const after = countSoil(z);
+    expect(after).toBe(before);
   });
 
-  it('does not pile soil above the mound height cap (y < 20)', () => {
-    const z = 0;
-    const preExisting = new Set<number>();
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = 20; y < HEIGHT; y++) {
-        state.grids[z][y][x] = 1;
-        preExisting.add(y * WIDTH + x);
-      }
-    }
-    dropDirt(WIDTH / 2, 0, z);
-    for (let x = 0; x < WIDTH; x++) {
-      for (let y = 0; y < 20; y++) {
-        expect(state.grids[z][y][x]).toBe(0);
-      }
-    }
+  it('returns 0 for non-positive amount', () => {
+    expect(dropDirt(WIDTH / 2, 0, 0, 0)).toBe(0);
+    expect(dropDirt(WIDTH / 2, 0, 0, -1)).toBe(0);
   });
+
+  function countSoil(z: number): number {
+    let n = 0;
+    for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        if (state.grids[z][vy][vx] === 1) n++;
+      }
+    }
+    return n;
+  }
 });
 
 describe('depositPheromone / getPheromone', () => {
@@ -299,15 +305,15 @@ describe('depositPheromone / getPheromone', () => {
     expect(getPheromone(10, 10, 0)).toBe(0);
   });
 
-  it('stores deposited amount', () => {
-    depositPheromone(10, 10, 0, 0.5);
-    expect(getPheromone(10, 10, 0)).toBeCloseTo(0.5);
+  it('stores deposited amount (voxel-quantized)', () => {
+    depositPheromone(40, 40, 0, 0.5);
+    expect(getPheromone(40, 40, 0)).toBeCloseTo(0.5);
   });
 
-  it('accumulates multiple deposits', () => {
-    depositPheromone(5, 5, 1, 0.3);
-    depositPheromone(5, 5, 1, 0.3);
-    expect(getPheromone(5, 5, 1)).toBeCloseTo(0.6);
+  it('accumulates multiple deposits in the same voxel', () => {
+    depositPheromone(20, 20, 1, 0.3);
+    depositPheromone(20, 20, 1, 0.3);
+    expect(getPheromone(20, 20, 1)).toBeCloseTo(0.6);
   });
 
   it('clamps to 1.0', () => {
@@ -333,7 +339,6 @@ describe('depositPheromone / getPheromone', () => {
   it('deposit ignores out-of-bounds y', () => {
     depositPheromone(10, -1, 0, 0.5);
     depositPheromone(10, HEIGHT, 0, 0.5);
-    // no-op; pheromone at valid cells stays 0
     expect(getPheromone(10, 0, 0)).toBe(0);
   });
 });
@@ -360,71 +365,73 @@ describe('evaporatePheromone', () => {
 });
 
 describe('makeDiggable', () => {
-  it('converts protected cells (3) to gel (1) within the width', () => {
-    for (let y = GROUND_LEVEL; y < GROUND_LEVEL + 10; y++) {
-      state.grids[0][y][50] = 3;
+  it('converts protected voxels (3) to gel (1) within the width', () => {
+    const z = 0;
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    for (let dvy = 0; dvy < 3; dvy++) {
+      state.grids[z][groundVy + dvy][px2v(50)] = 3;
     }
-    makeDiggable(50, 0, 3, 5);
-    expect(getGridType(50, GROUND_LEVEL, 0)).toBe(1);
+    makeDiggable(50, z, 5, 8);
+    expect(state.grids[z][groundVy][px2v(50)]).toBe(1);
   });
 
-  it('does not modify cells that are not type 3', () => {
-    state.grids[0][GROUND_LEVEL][50] = 0;
-    makeDiggable(50, 0, 3, 5);
-    expect(getGridType(50, GROUND_LEVEL, 0)).toBe(0);
+  it('does not modify voxels that are not type 3', () => {
+    const z = 0;
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    state.grids[z][groundVy][px2v(50)] = 0;
+    makeDiggable(50, z, 5, 8);
+    expect(state.grids[z][groundVy][px2v(50)]).toBe(0);
   });
 
   it('ignores out-of-bounds z', () => {
-    makeDiggable(50, -1, 3, 5);
-    makeDiggable(50, DEPTH, 3, 5);
+    expect(() => makeDiggable(50, -1, 5, 8)).not.toThrow();
+    expect(() => makeDiggable(50, DEPTH, 5, 8)).not.toThrow();
   });
 
-  it('handles width that extends outside grid boundaries', () => {
-    // cx=2, width=10 → x ranges from -8 to 12; negative x are out-of-bounds
-    for (let y = GROUND_LEVEL; y < GROUND_LEVEL + 10; y++) {
-      for (let x = 0; x < 15; x++) state.grids[0][y][x] = 3;
+  it('handles width that extends past the grid edge', () => {
+    const z = 0;
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    for (let dvy = 0; dvy < 3; dvy++) {
+      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 3;
     }
-    makeDiggable(2, 0, 10, 5);
-    // Cells at x=0 should be converted
-    expect(getGridType(0, GROUND_LEVEL, 0)).toBe(1);
+    makeDiggable(2, z, 12, 8);
+    expect(state.grids[z][groundVy][0]).toBe(1);
   });
 });
 
 describe('attemptCreateNewEntrance', () => {
   it('creates a diggable entrance when valid positions exist', () => {
-    // Fill entire grid with protected cells (type 3) so all positions are valid
     for (let z = 0; z < DEPTH; z++) {
-      for (let y = 0; y < HEIGHT; y++) {
-        for (let x = 0; x < WIDTH; x++) {
-          state.grids[z][y][x] = 3;
+      for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+        for (let vx = 0; vx < GRID_WIDTH; vx++) {
+          state.grids[z][vy][vx] = 3;
         }
       }
     }
     attemptCreateNewEntrance();
-    // At least some cells near GROUND_LEVEL should have changed from 3 → 1
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+    const checkEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH + 4) / VOXEL_SIZE);
     let hasDiggable = false;
-    for (let z = 0; z < DEPTH; z++) {
-      for (let y = GROUND_LEVEL; y <= GROUND_LEVEL + PROTECTED_DEPTH + 2; y++) {
-        for (let x = 0; x < WIDTH; x++) {
-          if (state.grids[z][y][x] === 1) { hasDiggable = true; break; }
+    outer: for (let z = 0; z < DEPTH; z++) {
+      for (let vy = groundVy; vy <= checkEnd; vy++) {
+        for (let vx = 0; vx < GRID_WIDTH; vx++) {
+          if (state.grids[z][vy][vx] === 1) { hasDiggable = true; break outer; }
         }
-        if (hasDiggable) break;
       }
-      if (hasDiggable) break;
     }
     expect(hasDiggable).toBe(true);
   });
 
   it('does nothing when all positions have nearby openings', () => {
-    // All cells near GROUND_LEVEL are air → every position has a nearby opening
     for (let z = 0; z < DEPTH; z++) {
-      for (let y = GROUND_LEVEL; y <= GROUND_LEVEL + 20; y++) {
-        for (let x = 0; x < WIDTH; x++) {
-          state.grids[z][y][x] = 0;
+      const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+      const endVy = Math.min(GRID_HEIGHT - 1, groundVy + 6);
+      for (let vy = groundVy; vy <= endVy; vy++) {
+        for (let vx = 0; vx < GRID_WIDTH; vx++) {
+          state.grids[z][vy][vx] = 0;
         }
       }
     }
-    // Should not throw
     expect(() => attemptCreateNewEntrance()).not.toThrow();
   });
 });

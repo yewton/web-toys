@@ -1,4 +1,8 @@
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH } from './constants';
+import {
+  WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH,
+  VOXEL_SIZE, GRID_WIDTH, GRID_HEIGHT,
+  MIN_VOXEL_SIZE_FOR_GRID_LINES,
+} from './constants';
 import { state } from './state';
 import { getGridType, getPheromone } from './grid';
 
@@ -32,50 +36,59 @@ const DIG_COLORS: readonly [number, number, number][] = [
   [ 75, 205, 230],  // 111 – all layers
 ];
 
-/** Grid cell colours with per-layer excavation bitmask */
+/** Grid cell colours with per-layer excavation bitmask.
+ *  grids are voxel-coordinate; we expand each voxel to a VOXEL_SIZE×VOXEL_SIZE block. */
 function fillGridPixels(data: Uint8ClampedArray): void {
   const { grids } = state;
+  const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+  const protectedVyEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH) / VOXEL_SIZE);
 
-  for (let y = 0; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
-      const idx = (y * WIDTH + x) * 4;
+  for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+    for (let vx = 0; vx < GRID_WIDTH; vx++) {
       let r: number, g: number, b: number;
+      const yCenter = vy * VOXEL_SIZE + VOXEL_SIZE / 2;
 
-      if (y < GROUND_LEVEL) {
-        // Above ground: type-1 cells are ant-deposited mound material.
-        // Render them with the same brown ramp as substrate so the debug view
-        // matches the model's unified soil semantics.
-        const hasMound = grids[0][y][x] === 1 || grids[1][y][x] === 1 || grids[2][y][x] === 1;
+      if (vy < groundVy) {
+        const hasMound = grids[0][vy][vx] === 1 || grids[1][vy][vx] === 1 || grids[2][vy][vx] === 1;
         if (hasMound) {
-          const d = y / HEIGHT;
+          const d = yCenter / HEIGHT;
           r = (105 + d * 45) | 0;
           g = ( 62 + d * 28) | 0;
           b = ( 22 + d * 18) | 0;
         } else {
           r = 10; g = 10; b = 24;
         }
-      } else if (y < GROUND_LEVEL + PROTECTED_DEPTH) {
-        const allProtected = grids[0][y][x] === 3 && grids[1][y][x] === 3 && grids[2][y][x] === 3;
+      } else if (vy < protectedVyEnd) {
+        const allProtected = grids[0][vy][vx] === 3 && grids[1][vy][vx] === 3 && grids[2][vy][vx] === 3;
         if (allProtected) { r = 130; g =  25; b =  25; }
         else              { r =  60; g = 190; b =  80; }  // entrance
       } else {
-        const mask = (grids[0][y][x] === 0 ? 4 : 0)
-                   | (grids[1][y][x] === 0 ? 2 : 0)
-                   | (grids[2][y][x] === 0 ? 1 : 0);
+        const mask = (grids[0][vy][vx] === 0 ? 4 : 0)
+                   | (grids[1][vy][vx] === 0 ? 2 : 0)
+                   | (grids[2][vy][vx] === 0 ? 1 : 0);
         if (mask > 0) {
           [r, g, b] = DIG_COLORS[mask];
         } else {
-          const d = y / HEIGHT;
+          const d = yCenter / HEIGHT;
           r = (105 + d * 45) | 0;
           g = ( 62 + d * 28) | 0;
           b = ( 22 + d * 18) | 0;
         }
       }
 
-      data[idx]     = r;
-      data[idx + 1] = g;
-      data[idx + 2] = b;
-      data[idx + 3] = 255;
+      // Fill the VOXEL_SIZE×VOXEL_SIZE block
+      const px0 = vx * VOXEL_SIZE;
+      const py0 = vy * VOXEL_SIZE;
+      for (let py = py0; py < py0 + VOXEL_SIZE; py++) {
+        let idx = (py * WIDTH + px0) * 4;
+        for (let px = 0; px < VOXEL_SIZE; px++) {
+          data[idx]     = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+          idx += 4;
+        }
+      }
     }
   }
 }
@@ -87,13 +100,12 @@ function fillGridPixels(data: Uint8ClampedArray): void {
 function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
   phCtx.clearRect(0, 0, WIDTH, HEIGHT);
   const { pheromone } = state;
-  const STEP = 4;
   // Base radius ≈ 2× ant Z-ring (5.5 px) → 11–14 px
   const BASE_R = 13;
 
-  for (let y = 0; y < HEIGHT; y += STEP) {
-    for (let x = 0; x < WIDTH; x += STEP) {
-      const phIdx = y * WIDTH + x;
+  for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+    for (let vx = 0; vx < GRID_WIDTH; vx++) {
+      const phIdx = vy * GRID_WIDTH + vx;
       let maxPh = 0;
       for (let z = 0; z < DEPTH; z++) {
         const ph = pheromone[z][phIdx];
@@ -102,11 +114,13 @@ function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
       if (maxPh < 0.0005) continue;
 
       const t = Math.min(1, Math.sqrt(maxPh * 20));
-      const r = (BASE_R * t + 3) | 0; // min visible radius of 3 px even for faint trails
-      const g = (210 - t * 60) | 0;   // warm amber → yellow
+      const r = (BASE_R * t + 3) | 0;
+      const g = (210 - t * 60) | 0;
+      const px = vx * VOXEL_SIZE + VOXEL_SIZE / 2;
+      const py = vy * VOXEL_SIZE + VOXEL_SIZE / 2;
       phCtx.fillStyle = `rgba(255,${g},0,${(t * 0.9).toFixed(2)})`;
       phCtx.beginPath();
-      phCtx.arc(x, y, r, 0, Math.PI * 2);
+      phCtx.arc(px, py, r, 0, Math.PI * 2);
       phCtx.fill();
     }
   }
@@ -286,6 +300,27 @@ function drawLegend(ctx: CanvasRenderingContext2D): void {
   });
 }
 
+// ─── VOXEL GRID LINES ─────────────────────────────────────────────────────────
+
+function drawVoxelGridLines(ctx: CanvasRenderingContext2D): void {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let vx = 1; vx < GRID_WIDTH; vx++) {
+    const x = vx * VOXEL_SIZE + 0.5;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, HEIGHT);
+  }
+  for (let vy = 1; vy < GRID_HEIGHT; vy++) {
+    const y = vy * VOXEL_SIZE + 0.5;
+    ctx.moveTo(0, y);
+    ctx.lineTo(WIDTH, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ─── GROUND LINE ──────────────────────────────────────────────────────────────
 
 function drawGroundLine(ctx: CanvasRenderingContext2D): void {
@@ -308,12 +343,13 @@ function drawGroundLine(ctx: CanvasRenderingContext2D): void {
 
 function drawEntranceIndicators(ctx: CanvasRenderingContext2D): void {
   const { grids } = state;
+  const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
 
-  // Mark entrance columns: protected-zone row that is not type 3
-  const entrance = new Uint8Array(WIDTH);
-  for (let x = 0; x < WIDTH; x++) {
+  // Mark entrance voxel columns: protected-zone row that is not type 3
+  const entrance = new Uint8Array(GRID_WIDTH);
+  for (let vx = 0; vx < GRID_WIDTH; vx++) {
     for (let z = 0; z < DEPTH; z++) {
-      if (grids[z][GROUND_LEVEL][x] !== 3) { entrance[x] = 1; break; }
+      if (grids[z][groundVy][vx] !== 3) { entrance[vx] = 1; break; }
     }
   }
 
@@ -324,11 +360,11 @@ function drawEntranceIndicators(ctx: CanvasRenderingContext2D): void {
 
   // Scan for clusters, draw one arrow per cluster at its center
   let i = 0;
-  while (i < WIDTH) {
+  while (i < GRID_WIDTH) {
     if (!entrance[i]) { i++; continue; }
     let j = i;
-    while (j < WIDTH && entrance[j]) j++;
-    const cx = (i + j - 1) / 2;
+    while (j < GRID_WIDTH && entrance[j]) j++;
+    const cx = ((i + j) / 2) * VOXEL_SIZE;
     // Stem
     ctx.beginPath();
     ctx.moveTo(cx, GROUND_LEVEL - 13);
@@ -358,6 +394,7 @@ export function drawDebugFrame(ctx: CanvasRenderingContext2D): void {
   if (!_gridImgData) _gridImgData = ctx.createImageData(WIDTH, HEIGHT);
   fillGridPixels(_gridImgData.data);
   ctx.putImageData(_gridImgData, 0, 0);
+  if (VOXEL_SIZE >= MIN_VOXEL_SIZE_FOR_GRID_LINES) drawVoxelGridLines(ctx);
   drawGroundLine(ctx);
   drawEntranceIndicators(ctx);
   drawAnts(ctx, true);

@@ -1,4 +1,8 @@
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH, PHEROMONE_DEPOSIT_EXPLORE, PHEROMONE_DEPOSIT_RETURN } from './constants';
+import {
+  WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH,
+  DIG_RADIUS_PX, DIG_REACH_PX,
+  PHEROMONE_DEPOSIT_EXPLORE, PHEROMONE_DEPOSIT_RETURN,
+} from './constants';
 import { getGridType, digGel, dropDirtInside, dropDirt, dirtColor, depositPheromone, getPheromone, makeDiggable } from './grid';
 
 function wrapAngle(diff: number): number {
@@ -18,6 +22,8 @@ export class Ant {
   wanderTimer = 0;
 
   hasDirt = false;
+  /** Voxels of soil this ant is carrying. Mirrored by hasDirt for UI/wander logic. */
+  carryAmount = 0;
   dropTimer = 0;
   turnCount = 0;
   surfaceFrustration = 0;
@@ -68,6 +74,7 @@ export class Ant {
     const currentGridType = getGridType(this.x, this.y, this.z);
     if (currentGridType === 1 && this.y < GROUND_LEVEL) {
       // Ant got buried inside a surface mound — dig itself free.
+      // (Volume from rescue digs is discarded, not added to carry.)
       digGel(this.x, this.y, this.z, 2.5);
     } else if (currentGridType === 3) {
       this.y -= 2.0;
@@ -159,13 +166,19 @@ export class Ant {
    * around, and heads back toward the surface to deposit it.
    */
   private digOneCell(): void {
-    const digX = this.x + Math.cos(this.angle) * 2;
-    const digY = this.y + Math.sin(this.angle) * 2;
-    digGel(digX, digY, this.z, 1.5);
-    this.x += Math.cos(this.angle) * this.speed * 0.4;
-    this.y += Math.sin(this.angle) * this.speed * 0.4;
+    // Pixel-anchored: how many voxels each bite removes depends on VOXEL_SIZE
+    // (smaller voxels → more voxels per bite), but the visual bite stays the same.
+    const digX = this.x + Math.cos(this.angle) * DIG_REACH_PX;
+    const digY = this.y + Math.sin(this.angle) * DIG_REACH_PX;
+    const dug = digGel(digX, digY, this.z, DIG_RADIUS_PX);
+    this.carryAmount += dug;
+    this.x += Math.cos(this.angle) * this.speed * 0.5;
+    this.y += Math.sin(this.angle) * this.speed * 0.5;
     this.angle += (Math.random() - 0.5) * 0.15;
-    if (Math.random() < 0.05) {
+    // Decide whether the ant has piled up enough to head home. The 0.15 base rate
+    // is roughly 3× the legacy 0.05, because each bite now removes a whole voxel
+    // (volume-conserving carry instead of "one grain per nibble").
+    if (this.carryAmount > 0 && Math.random() < 0.15) {
       this.hasDirt = true;
       this.angle += Math.PI;
       this.wanderAngle = this.y >= GROUND_LEVEL ? -Math.PI / 2 : Math.PI / 2;
@@ -240,8 +253,9 @@ export class Ant {
     if (this.hasDirt && this.y >= GROUND_LEVEL) {
       const depthRatio = Math.max(0, (this.y - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL));
       if (Math.random() < 0.0001 + depthRatio * 0.005) {
-        this.hasDirt = false;
-        dropDirtInside(this.x, this.y, this.z);
+        const dropped = dropDirtInside(this.x, this.y, this.z);
+        this.carryAmount = Math.max(0, this.carryAmount - dropped);
+        if (this.carryAmount === 0) this.hasDirt = false;
         this.wanderAngle = Math.PI / 2;
         this.wanderTimer = 100;
       }
@@ -251,8 +265,12 @@ export class Ant {
       if (this.dropTimer <= 0) this.dropTimer = 30 + Math.random() * 80;
       this.dropTimer--;
       if (this.dropTimer <= 0) {
+        const placed = dropDirt(this.x, this.y, this.z, this.carryAmount);
+        this.carryAmount = Math.max(0, this.carryAmount - placed);
+        // Discard any leftover that wouldn't fit (e.g., column saturated at mound cap)
+        // so the ant doesn't get stuck wandering with un-placeable dirt.
+        this.carryAmount = 0;
         this.hasDirt = false;
-        dropDirt(this.x, this.y, this.z);
         this.wanderAngle = Math.PI / 2;
         this.wanderTimer = 100;
       }

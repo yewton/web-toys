@@ -1,43 +1,94 @@
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH, PHEROMONE_DECAY } from './constants';
+import {
+  WIDTH,
+  HEIGHT,
+  DEPTH,
+  GROUND_LEVEL,
+  PROTECTED_DEPTH,
+  PHEROMONE_DECAY,
+  VOXEL_SIZE,
+  GRID_WIDTH,
+  GRID_HEIGHT,
+  DROP_GRAIN_RADIUS_PX,
+  DROP_JITTER_PX,
+} from './constants';
 import { state } from './state';
 
 /**
- * Cell values:
+ * Cell values (per voxel):
  *   0 = air
  *   1 = soil (diggable — covers both original substrate and ant-deposited material)
  *   3 = protected (not diggable; pinned topsoil)
+ *
+ * All public coordinates (cx, cy, radius, etc.) are in *pixels*. The grid is
+ * stored at coarse voxel resolution (VOXEL_SIZE px per cell). Pixel circles
+ * drawn to soilCanvases preserve a finer-than-grid silhouette so the visible
+ * shape stays smooth even though the logic is coarse.
+ *
+ * digGel / fillDirt / dropDirtInside all return the count of voxels they
+ * changed, so callers can conserve dug material when redepositing it.
  */
 
-/** Returns the cell type at (x, y, z); out-of-bounds is treated as wall (1) */
+const VOXEL_SIZE_PX = VOXEL_SIZE;
+
+/** Returns the cell type at pixel (x, y, z); out-of-bounds is treated as wall (1) */
 export function getGridType(x: number, y: number, z: number): number {
   if (z < 0 || z >= DEPTH) return 1;
-  const gx = Math.floor(x);
-  const gy = Math.floor(y);
-  if (gx < 0 || gx >= WIDTH || gy >= HEIGHT) return 1;
-  if (gy < 0) return 0;
-  return state.grids[z][gy][gx];
+  const vx = Math.floor(x / VOXEL_SIZE_PX);
+  const vy = Math.floor(y / VOXEL_SIZE_PX);
+  if (vx < 0 || vx >= GRID_WIDTH || vy >= GRID_HEIGHT) return 1;
+  if (vy < 0) return 0;
+  return state.grids[z][vy][vx];
 }
 
-/** Excavates diggable soil (1) in a circle centered at (cx, cy) */
-export function digGel(cx: number, cy: number, z: number, radius: number): void {
-  if (z < 0 || z >= DEPTH) return;
+/**
+ * Iterate the voxel rect that intersects a pixel-space circle (cx, cy, r).
+ * Predicate `test(vx, vy)` returns true if the voxel was actually changed;
+ * the function returns the count of changed voxels.
+ */
+function applyToVoxelCircle(
+  cx: number,
+  cy: number,
+  radius: number,
+  test: (vx: number, vy: number) => boolean,
+): number {
+  const minVx = Math.max(0, Math.floor((cx - radius) / VOXEL_SIZE_PX));
+  const maxVx = Math.min(GRID_WIDTH - 1, Math.floor((cx + radius) / VOXEL_SIZE_PX));
+  const minVy = Math.max(0, Math.floor((cy - radius) / VOXEL_SIZE_PX));
+  const maxVy = Math.min(GRID_HEIGHT - 1, Math.floor((cy + radius) / VOXEL_SIZE_PX));
+  const r2 = radius * radius;
 
-  let dug = false;
-
-  for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
-    for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
-      if (y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH) {
-        if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) {
-          if (state.grids[z][y][x] === 1) {
-            state.grids[z][y][x] = 0;
-            dug = true;
-          }
-        }
+  let changed = 0;
+  for (let vy = minVy; vy <= maxVy; vy++) {
+    const rectMinY = vy * VOXEL_SIZE_PX;
+    const rectMaxY = rectMinY + VOXEL_SIZE_PX;
+    for (let vx = minVx; vx <= maxVx; vx++) {
+      const rectMinX = vx * VOXEL_SIZE_PX;
+      const rectMaxX = rectMinX + VOXEL_SIZE_PX;
+      const closestX = cx < rectMinX ? rectMinX : cx > rectMaxX ? rectMaxX : cx;
+      const closestY = cy < rectMinY ? rectMinY : cy > rectMaxY ? rectMaxY : cy;
+      const dx = closestX - cx;
+      const dy = closestY - cy;
+      if (dx * dx + dy * dy <= r2 && test(vx, vy)) {
+        changed++;
       }
     }
   }
+  return changed;
+}
 
-  if (dug) {
+/** Excavates diggable soil (1) in a circle centered at (cx, cy). Returns dug voxel count. */
+export function digGel(cx: number, cy: number, z: number, radius: number): number {
+  if (z < 0 || z >= DEPTH) return 0;
+
+  const dug = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
+    if (state.grids[z][vy][vx] === 1) {
+      state.grids[z][vy][vx] = 0;
+      return true;
+    }
+    return false;
+  });
+
+  if (dug > 0) {
     const ctx = state.soilCtxs[z];
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
@@ -46,6 +97,7 @@ export function digGel(cx: number, cy: number, z: number, radius: number): void 
     ctx.fill();
     ctx.restore();
   }
+  return dug;
 }
 
 export function dirtColor(cy: number): string {
@@ -71,109 +123,114 @@ export function soilFillStyle(cy: number): string {
 /** Back-compat alias retained for external imports; same formula as soilFillStyle. */
 export const dirtFillStyle = soilFillStyle;
 
-/** Drops a small soil clump underground (loose fill after digging) */
-export function dropDirtInside(cx: number, cy: number, z: number): void {
-  if (z < 0 || z >= DEPTH) return;
-  const radius = 1.5 + Math.random();
+/** Drops a small soil clump underground (loose fill after digging). Returns placed count. */
+export function dropDirtInside(cx: number, cy: number, z: number): number {
+  if (z < 0 || z >= DEPTH) return 0;
+  const radius = DROP_GRAIN_RADIUS_PX * (0.8 + Math.random() * 0.4);
 
-  for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
-    for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
-      if (y >= GROUND_LEVEL && y < HEIGHT && x >= 0 && x < WIDTH) {
-        if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) {
-          if (state.grids[z][y][x] === 0) {
-            state.grids[z][y][x] = 1;
-          }
-        }
-      }
+  const placed = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
+    if (vy * VOXEL_SIZE_PX < GROUND_LEVEL) return false;
+    if (state.grids[z][vy][vx] === 0) {
+      state.grids[z][vy][vx] = 1;
+      return true;
     }
-  }
+    return false;
+  });
 
-  const ctx = state.soilCtxs[z];
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = soilFillStyle(cy);
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fill();
+  if (placed > 0) {
+    const ctx = state.soilCtxs[z];
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = soilFillStyle(cy);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return placed;
 }
 
-/** Fills empty cells with soil and paints into the unified soil canvas */
-export function fillDirt(cx: number, cy: number, z: number, radius: number): void {
-  if (z < 0 || z >= DEPTH) return;
+/** Fills empty cells with soil and paints into the unified soil canvas. Returns placed count. */
+export function fillDirt(cx: number, cy: number, z: number, radius: number): number {
+  if (z < 0 || z >= DEPTH) return 0;
 
-  for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
-    for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
-      if (y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH) {
-        if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) {
-          if (state.grids[z][y][x] === 0) {
-            state.grids[z][y][x] = 1;
-          }
-        }
-      }
+  const placed = applyToVoxelCircle(cx, cy, radius, (vx, vy) => {
+    if (state.grids[z][vy][vx] === 0) {
+      state.grids[z][vy][vx] = 1;
+      return true;
     }
-  }
+    return false;
+  });
 
-  const ctx = state.soilCtxs[z];
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = soilFillStyle(cy);
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fill();
+  if (placed > 0) {
+    const ctx = state.soilCtxs[z];
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = soilFillStyle(cy);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return placed;
 }
 
-/** Visible mound may not appear above this Y. Leaves y=0..MOUND_TOP_LIMIT clear for surface ants. */
+/** Visible mound may not pile above this Y. */
 const MOUND_TOP_LIMIT = 20;
-/** Earliest scanY allowed; fillDirt drops at scanY-1.5 with radius up to 3.5, so scanY must clear MOUND_TOP_LIMIT+5. */
-const MOUND_MIN_SCAN_Y = MOUND_TOP_LIMIT + 5;
-/** Reject scans that fall deep below the surface — those are tunnel interiors, not the surface edge. */
-const MOUND_MAX_SCAN_Y = GROUND_LEVEL + 10;
 
-/** Drops ant-carried soil near the surface. Skips the drop if all candidate columns have piled past the cap. */
-export function dropDirt(x: number, y: number, z: number): void {
-  let dropX = x;
-  let targetY = -1;
+/**
+ * Surface-deposit: stack `amount` voxels of soil near the ant, on top of the
+ * first solid below. Each iteration picks a slightly jittered column so the
+ * pile spreads laterally instead of forming a single pillar.
+ *
+ * Returns the number of voxels actually placed (may be less than `amount`
+ * if every nearby column has hit the mound cap or run out of empty space).
+ *
+ * Safety: refuses to stack any higher than MOUND_TOP_LIMIT.
+ */
+export function dropDirt(x: number, y: number, z: number, amount: number): number {
+  if (z < 0 || z >= DEPTH || amount <= 0) return 0;
 
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const candidateX = Math.max(2, Math.min(WIDTH - 2, x + (Math.random() - 0.5) * 60));
+  let remaining = amount;
+  let attempts = 0;
+  const maxAttempts = amount * 8 + 4;
+  const startScanY = Math.max(0, Math.floor(y) - VOXEL_SIZE_PX);
+  const edgeMargin = Math.max(VOXEL_SIZE_PX, DROP_GRAIN_RADIUS_PX);
 
-    let scanY = Math.floor(y);
-    let hitType = 0;
-    for (; scanY < HEIGHT; scanY++) {
-      hitType = getGridType(candidateX, scanY, z);
-      if (hitType > 0) break;
+  while (remaining > 0 && attempts < maxAttempts) {
+    attempts++;
+    const offset = (Math.random() - 0.5) * DROP_JITTER_PX * 2;
+    const targetX = Math.max(edgeMargin, Math.min(WIDTH - edgeMargin, x + offset));
+
+    let hitY = -1;
+    for (let scanY = startScanY; scanY < HEIGHT; scanY++) {
+      if (getGridType(targetX, scanY, z) > 0) { hitY = scanY; break; }
     }
+    if (hitY < 0) continue;
 
-    // Accept any solid (soil/protected) at the surface edge; reject deep hits (tunnel interior).
-    if (hitType > 0 && scanY >= MOUND_MIN_SCAN_Y && scanY <= MOUND_MAX_SCAN_Y) {
-      dropX = candidateX;
-      targetY = scanY;
-      break;
-    }
+    const placeY = hitY - DROP_GRAIN_RADIUS_PX * 0.6;
+    if (placeY <= MOUND_TOP_LIMIT) continue;
+
+    const placed = fillDirt(targetX, placeY, z, DROP_GRAIN_RADIUS_PX);
+    if (placed === 0) continue;
+    remaining -= placed;
   }
-
-  if (targetY < 0) return; // No valid surface column found — discard the dirt.
-
-  const radius = 2 + Math.random() * 1.5;
-  const dropY = targetY;
-  fillDirt(dropX, dropY, z, radius);
+  return amount - remaining;
 }
 
-/** Deposits pheromone at (x, y, z) */
+/** Deposits pheromone at pixel (x, y, z). Pheromone is stored per-voxel. */
 export function depositPheromone(x: number, y: number, z: number, amount: number): void {
   if (z < 0 || z >= DEPTH) return;
-  const gx = Math.floor(x);
-  const gy = Math.floor(y);
-  if (gx < 0 || gx >= WIDTH || gy < 0 || gy >= HEIGHT) return;
-  const idx = gy * WIDTH + gx;
+  const vx = Math.floor(x / VOXEL_SIZE_PX);
+  const vy = Math.floor(y / VOXEL_SIZE_PX);
+  if (vx < 0 || vx >= GRID_WIDTH || vy < 0 || vy >= GRID_HEIGHT) return;
+  const idx = vy * GRID_WIDTH + vx;
   state.pheromone[z][idx] = Math.min(1.0, state.pheromone[z][idx] + amount);
 }
 
-/** Returns the pheromone concentration at (x, y, z) */
+/** Returns the pheromone concentration at pixel (x, y, z) */
 export function getPheromone(x: number, y: number, z: number): number {
   if (z < 0 || z >= DEPTH) return 0;
-  const gx = Math.floor(x);
-  const gy = Math.floor(y);
-  if (gx < 0 || gx >= WIDTH || gy < 0 || gy >= HEIGHT) return 0;
-  return state.pheromone[z][gy * WIDTH + gx];
+  const vx = Math.floor(x / VOXEL_SIZE_PX);
+  const vy = Math.floor(y / VOXEL_SIZE_PX);
+  if (vx < 0 || vx >= GRID_WIDTH || vy < 0 || vy >= GRID_HEIGHT) return 0;
+  return state.pheromone[z][vy * GRID_WIDTH + vx];
 }
 
 /** Evaporates all pheromone by one step */
@@ -186,17 +243,19 @@ export function evaporatePheromone(): void {
   }
 }
 
-/** Converts part of the protected layer (3) to diggable soil (1) to open an entrance */
+/** Converts part of the protected layer (3) to diggable soil (1) to open an entrance.
+ *  cx, width, depth are all in pixels. */
 export function makeDiggable(cx: number, z: number, width: number, depth: number): void {
   if (z < 0 || z >= DEPTH) return;
 
-  for (let y = GROUND_LEVEL; y <= GROUND_LEVEL + depth; y++) {
-    for (let x = Math.floor(cx - width); x <= Math.ceil(cx + width); x++) {
-      if (y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH) {
-        if (state.grids[z][y][x] === 3) {
-          state.grids[z][y][x] = 1;
-        }
-      }
+  const minVx = Math.max(0, Math.floor((cx - width) / VOXEL_SIZE_PX));
+  const maxVx = Math.min(GRID_WIDTH - 1, Math.floor((cx + width) / VOXEL_SIZE_PX));
+  const minVy = Math.max(0, Math.floor(GROUND_LEVEL / VOXEL_SIZE_PX));
+  const maxVy = Math.min(GRID_HEIGHT - 1, Math.floor((GROUND_LEVEL + depth) / VOXEL_SIZE_PX));
+
+  for (let vy = minVy; vy <= maxVy; vy++) {
+    for (let vx = minVx; vx <= maxVx; vx++) {
+      if (state.grids[z][vy][vx] === 3) state.grids[z][vy][vx] = 1;
     }
   }
 }
@@ -206,11 +265,11 @@ export function attemptCreateNewEntrance(): void {
   const margin = 25;
   const validXs: number[] = [];
 
-  for (let x = margin; x < WIDTH - margin; x += 5) {
+  for (let x = margin; x < WIDTH - margin; x += VOXEL_SIZE_PX) {
     let hasHoleNearby = false;
 
-    outer: for (let checkX = x - margin; checkX <= x + margin; checkX++) {
-      for (let checkY = GROUND_LEVEL; checkY <= GROUND_LEVEL + 15; checkY++) {
+    outer: for (let checkX = x - margin; checkX <= x + margin; checkX += VOXEL_SIZE_PX) {
+      for (let checkY = GROUND_LEVEL; checkY <= GROUND_LEVEL + 15; checkY += VOXEL_SIZE_PX) {
         for (let z = 0; z < DEPTH; z++) {
           const t = getGridType(checkX, checkY, z);
           if (t === 0 || t === 1) {

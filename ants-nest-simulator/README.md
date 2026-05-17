@@ -5,8 +5,9 @@ A simulator where ants autonomously dig their nest using a collective-intelligen
 ## Overview
 
 - Ants deposit pheromones while exploring and returning; dig direction follows the trails of others
-- The grid is `WIDTH × HEIGHT × DEPTH` (400 × 400 × 3); the 3 depth layers are composited back-to-front to give a sense of depth
-- All structure (tunnels, branches, surface entrances, dirt mounds) emerges from atomic 1-cell digging actions and dirt deposition — there are no multi-step burst-mode states
+- Canvas is `WIDTH × HEIGHT × DEPTH` (400 × 400 × 3); the 3 depth layers are composited back-to-front to give a sense of depth
+- The substrate is stored as a coarse **voxel grid** (default `VOXEL_SIZE = 2 px`, so a 200 × 200 grid). Pixel-fine circles are drawn into the soil canvas, so the visible silhouette stays smooth even though the logic operates on whole voxels — see [Voxel grid](#voxel-grid) below
+- All structure (tunnels, branches, surface entrances, dirt mounds) emerges from atomic single-bite digging and volume-conserving dirt deposition — there are no multi-step burst-mode states
 
 ## UI
 
@@ -15,8 +16,26 @@ A simulator where ants autonomously dig their nest using a collective-intelligen
 | Ant Count | Adjust number of ants (0–200) with a slider |
 | Simulation Speed | Change simulation speed from 1x to 20x |
 | Flatten Soil (Reset) | Reset the grid to its initial state |
+| View Mode | `Normal` / `Internal` (debug grid + pheromone heatmap) / `Overlay` |
+| Voxel Size | `Fine (2 px)` smoother paths · `Coarse (4 px)` blockier with visible grid in debug view. Stored in localStorage; changing it reloads the page |
 
 ## Algorithm Details
+
+### Voxel grid
+
+The substrate is stored as `state.grids[z][vy][vx]` where each cell represents a `VOXEL_SIZE × VOXEL_SIZE` pixel block. Coordinates exposed through `grid.ts` (ant position, dig radius, pheromone lookup) are all in **pixels**; the conversion to voxel indices happens inside the grid module. Default `VOXEL_SIZE = 2` (200 × 200 grid) — switchable to `4` (100 × 100) via the UI.
+
+`VOXEL_SIZE` is a pure resolution dial. The body-scale constants below stay fixed in pixels regardless of voxel size, so the ant's "feel" is preserved — only the granularity of the substrate changes.
+
+| Constant | Pixels | Role |
+|---|---|---|
+| `DIG_RADIUS_PX` | 2.2 | Radius of one bite (≈ant mandible span) |
+| `DIG_REACH_PX` | 3.0 | Forward offset from the ant for each bite |
+| `DROP_GRAIN_RADIUS_PX` | 1.5 | Radius of one deposited soil grain |
+| `DROP_JITTER_PX` | 6.0 | Lateral spread when stacking a mound |
+| `MIN_VOXEL_SIZE_FOR_GRID_LINES` | 3 | Debug grid lines only rendered above this voxel size |
+
+**Volume conservation**: `digGel` / `fillDirt` / `dropDirtInside` all return the number of voxels they actually changed. An ant accumulates dug voxels in `carryAmount` and `dropDirt(x, y, z, amount)` reuses that same number when stacking the mound. This holds regardless of `VOXEL_SIZE`.
 
 ### Grid Cell Values
 
@@ -26,7 +45,7 @@ A simulator where ants autonomously dig their nest using a collective-intelligen
 | `1` | Soil — diggable. A single voxel type for both the original substrate and ant-deposited material |
 | `3` | Protected zone (top `PROTECTED_DEPTH = 6` px, not diggable) |
 
-Rendering: a single `soilCanvas` per Z layer holds the entire substrate. `digGel` cuts via `destination-out`; deposits (`dropDirtInside`, `fillDirt`, `dropDirt`) paint into the same canvas using `soilFillStyle(y)`, the same gradient ramp as the initial fill. The lack of a separate dirt layer is what makes mounds and tunnel re-fills visually seamless with the surrounding substrate.
+Rendering: a single `soilCanvas` per Z layer holds the entire substrate at full pixel resolution. `digGel` cuts via `destination-out` using a pixel-fine circle of `DIG_RADIUS_PX`, while updating *all voxels the circle touches* in the underlying grid. Deposits (`dropDirtInside`, `fillDirt`, `dropDirt`) paint pixel circles using `soilFillStyle(y)`, the same gradient ramp as the initial fill. The lack of a separate dirt layer is what makes mounds and tunnel re-fills visually seamless with the surrounding substrate.
 
 ### Pheromones
 
@@ -38,9 +57,9 @@ Rendering: a single `soilCanvas` per Z layer holds the entire substrate. `digGel
 
 Digging is **per-step and atomic**. There is no `digMode` state machine — each obstacle encounter triggers a single carving action via `digOneCell()`:
 
-1. Carve a radius-1.5 chunk of gel immediately in front of the ant
-2. Edge the ant forward at `0.4 × speed`
-3. With 5% probability, mark the ant as carrying dirt (`hasDirt = true`), flip 180°, and head back toward the surface to deposit
+1. Carve a `DIG_RADIUS_PX = 2.2` chunk of gel `DIG_REACH_PX = 3.0` in front of the ant — yields 1–4 voxels depending on `VOXEL_SIZE`
+2. Add the dug count to `carryAmount` and edge the ant forward at `0.5 × speed`
+3. With 15% probability when carrying anything, mark the ant as `hasDirt = true`, flip 180°, and head back toward the surface
 
 Tunnels lengthen by repeated single bites — never as a burst — so the visual progression is gradual. Rooms emerge naturally when multiple ants converge on the same area; they are not created explicitly.
 
@@ -72,19 +91,21 @@ The counter also resets whenever the ant reaches the underground. This lets disc
 
 ### Dirt Mound and Burial Protection
 
-- `dropDirt` scans the [25, 50] y-band for any solid cell (type 1 or 3) as a landing target, so deposited soil stacks on existing mounds instead of growing unbounded. Mound height is bounded at `MOUND_TOP_LIMIT = 20`.
-- Ants embedded in soil above ground level (the mound interior) call `digGel` locally to dig out, instead of teleporting upward. Prevents the y=0 trap where tall mounds engulf ants.
+- `dropDirt(x, y, z, amount)` stacks exactly `amount` voxels of soil near the ant's current column. Each iteration picks a slightly jittered column (within `±DROP_JITTER_PX`), scans downward to the first solid, and drops one pixel-grain above it. Mound height is bounded at `MOUND_TOP_LIMIT = 20` so columns at the cap are skipped.
+- Volume conservation: the `amount` the ant passes in comes straight from the voxels it dug — `dropDirt` returns the actually-placed count and the ant zeros out any leftover (e.g., when every nearby column is capped).
+- Ants embedded in soil above ground level (the mound interior) call `digGel` locally to dig out, instead of teleporting upward. Prevents the y=0 trap where tall mounds engulf ants. (Rescue dig volume is discarded, not added to `carryAmount`.)
 
 ## Module Structure
 
 ```
 src/
-├── constants.ts   grid size, pheromone coefficients, PROTECTED_DEPTH, etc.
+├── constants.ts   grid size, pheromone coefficients, PROTECTED_DEPTH, VOXEL_SIZE (+ allowed sizes / localStorage key), body-scale pixel constants
 ├── state.ts       singleton state (grid, pheromones, ant array)
-├── grid.ts        grid manipulation: digGel, dropDirt, dropDirtInside, makeDiggable, pheromones
-├── Ant.ts         ant behavior logic (digOneCell, wander, frustration) and rendering
-├── simulation.ts  render loop and layered composite rendering
-└── main.ts        entry point and UI event wiring
+├── grid.ts        voxel grid manipulation: digGel, dropDirt, dropDirtInside, makeDiggable, pheromones — all return the number of voxels changed for volume-conservation
+├── Ant.ts         ant behavior logic (digOneCell, wander, frustration) and rendering; tracks carryAmount in voxel units
+├── debugView.ts   debug overlay (voxel grid lines gated by VOXEL_SIZE, pheromone heatmap, sensor arrows)
+├── simulation.ts  render loop and layered composite rendering; initializes grids/pheromone at voxel resolution
+└── main.ts        entry point and UI event wiring (incl. voxel-size selector → localStorage + reload)
 ```
 
 ## Tests
