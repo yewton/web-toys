@@ -242,7 +242,7 @@ export function evaporatePheromone(): void {
   }
 }
 
-/** Excavates a small rectangle of soil to create an entrance.
+/** Excavates a small rectangle of soil to create an entrance by making it diggable.
  *  cx, width, depth are all in pixels. */
 export function openEntrance(cx: number, z: number, width: number, depth: number): void {
   if (z < 0 || z >= DEPTH) return;
@@ -254,15 +254,9 @@ export function openEntrance(cx: number, z: number, width: number, depth: number
 
   for (let vy = minVy; vy <= maxVy; vy++) {
     for (let vx = minVx; vx <= maxVx; vx++) {
-      state.grids[z][vy][vx] = 0;
+      if (state.grids[z][vy][vx] === 3) state.grids[z][vy][vx] = 1;
     }
   }
-
-  const ctx = state.soilCtxs[z];
-  ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.fillRect(cx - width, GROUND_LEVEL, width * 2, depth);
-  ctx.restore();
 }
 
 /** Automatically generates a new entrance away from existing tunnel openings */
@@ -277,7 +271,7 @@ export function attemptCreateNewEntrance(): void {
       for (let checkY = GROUND_LEVEL; checkY <= GROUND_LEVEL + 15; checkY += VOXEL_SIZE_PX) {
         for (let z = 0; z < DEPTH; z++) {
           const t = getGridType(checkX, checkY, z);
-          if (t === 0) {
+          if (t === 0 || t === 1) {
             hasHoleNearby = true;
             break outer;
           }

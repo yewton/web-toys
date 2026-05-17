@@ -57,6 +57,7 @@ export function initSimulation(): void {
   state.soilCtxs = [];
 
   const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+  const protectedVyEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH) / VOXEL_SIZE);
 
   for (let z = 0; z < DEPTH; z++) {
     state.grids[z] = Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH));
@@ -75,7 +76,7 @@ export function initSimulation(): void {
     for (let vy = 0; vy < GRID_HEIGHT; vy++) {
       for (let vx = 0; vx < GRID_WIDTH; vx++) {
         if (vy >= groundVy) {
-          state.grids[z][vy][vx] = 1;
+          state.grids[z][vy][vx] = vy < protectedVyEnd ? 3 : 1;
         }
       }
     }

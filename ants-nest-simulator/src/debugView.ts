@@ -1,5 +1,5 @@
 import {
-  WIDTH, HEIGHT, DEPTH, GROUND_LEVEL,
+  WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH,
   VOXEL_SIZE, GRID_WIDTH, GRID_HEIGHT,
   MIN_VOXEL_SIZE_FOR_GRID_LINES,
 } from './constants';
@@ -51,6 +51,7 @@ const DIG_COLORS: readonly [number, number, number][] = [
 function fillGridPixels(data: Uint8ClampedArray): void {
   const { grids } = state;
   const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+  const protectedVyEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH) / VOXEL_SIZE);
 
   for (let vy = 0; vy < GRID_HEIGHT; vy++) {
     for (let vx = 0; vx < GRID_WIDTH; vx++) {
@@ -66,6 +67,17 @@ function fillGridPixels(data: Uint8ClampedArray): void {
           b = ( 22 + d * 18) | 0;
         } else {
           r = 10; g = 10; b = 24;
+        }
+      } else if (vy < protectedVyEnd) {
+        const allProtected = grids[0][vy][vx] === 3 && grids[1][vy][vx] === 3 && grids[2][vy][vx] === 3;
+        const allAir = grids[0][vy][vx] === 0 && grids[1][vy][vx] === 0 && grids[2][vy][vx] === 0;
+
+        if (allAir) {
+          r = 0; g = 0; b = 0;
+        } else if (allProtected) {
+          r = 130; g =  25; b =  25;
+        } else {
+          r =  60; g = 190; b =  80; // entrance or partially dug
         }
       } else {
         const mask = (grids[0][vy][vx] === 0 ? 4 : 0)
@@ -265,6 +277,7 @@ const LEGEND: [string, string][] = [
   ['#235ab4', 'Dig: B+M'],
   ['#4bcde6', 'Dig: all'],
   ['#7a5230', 'Soil'],
+  ['#8c1e1e', 'Protected zone'],
   ['#3cbe50', 'Entrance'],
   ['#6495ed', 'Ring: Z back'],
   ['#c8c8c8', 'Ring: Z mid'],
@@ -348,11 +361,11 @@ function drawEntranceIndicators(ctx: CanvasRenderingContext2D): void {
   const { grids } = state;
   const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
 
-  // Mark entrance voxel columns: row that is type 0 (air)
+  // Mark entrance voxel columns: protected-zone row that is not type 3
   const entrance = new Uint8Array(GRID_WIDTH);
   for (let vx = 0; vx < GRID_WIDTH; vx++) {
     for (let z = 0; z < DEPTH; z++) {
-      if (grids[z][groundVy][vx] === 0) { entrance[vx] = 1; break; }
+      if (grids[z][groundVy][vx] !== 3) { entrance[vx] = 1; break; }
     }
   }
 

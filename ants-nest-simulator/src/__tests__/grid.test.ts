@@ -347,14 +347,14 @@ describe('evaporatePheromone', () => {
 });
 
 describe('openEntrance', () => {
-  it('excavates soil (sets to 0) within the width', () => {
+  it('converts protected soil (sets 3 to 1) within the width', () => {
     const z = 0;
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
     for (let dvy = 0; dvy < 3; dvy++) {
-      state.grids[z][groundVy + dvy][px2v(50)] = 1;
+      state.grids[z][groundVy + dvy][px2v(50)] = 3;
     }
     openEntrance(50, z, 5, 8);
-    expect(state.grids[z][groundVy][px2v(50)]).toBe(0);
+    expect(state.grids[z][groundVy][px2v(50)]).toBe(1);
   });
 
   it('ignores out-of-bounds z', () => {
@@ -366,19 +366,19 @@ describe('openEntrance', () => {
     const z = 0;
     const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
     for (let dvy = 0; dvy < 3; dvy++) {
-      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 1;
+      for (let vx = 0; vx < 6; vx++) state.grids[z][groundVy + dvy][vx] = 3;
     }
     openEntrance(2, z, 12, 8);
-    expect(state.grids[z][groundVy][0]).toBe(0);
+    expect(state.grids[z][groundVy][0]).toBe(1);
   });
 });
 
 describe('attemptCreateNewEntrance', () => {
-  it('creates an entrance when valid positions exist', () => {
+  it('creates an entrance (type 1) when valid positions exist', () => {
     for (let z = 0; z < DEPTH; z++) {
       for (let vy = 0; vy < GRID_HEIGHT; vy++) {
         for (let vx = 0; vx < GRID_WIDTH; vx++) {
-          state.grids[z][vy][vx] = 1;
+          state.grids[z][vy][vx] = 3;
         }
       }
     }
@@ -387,7 +387,7 @@ describe('attemptCreateNewEntrance', () => {
     let hasEntrance = false;
     outer: for (let z = 0; z < DEPTH; z++) {
       for (let vx = 0; vx < GRID_WIDTH; vx++) {
-        if (state.grids[z][groundVy][vx] === 0) { hasEntrance = true; break outer; }
+        if (state.grids[z][groundVy][vx] === 1) { hasEntrance = true; break outer; }
       }
     }
     expect(hasEntrance).toBe(true);
