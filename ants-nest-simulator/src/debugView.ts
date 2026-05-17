@@ -95,20 +95,20 @@ function fillGridPixels(data: Uint8ClampedArray): void {
 
 /**
  * Draw pheromone as filled circles (~2× the ant Z-ring radius) into the offscreen
- * canvas. Sampling every STEP pixels keeps the loop fast while preserving coverage.
+ * canvas. Sampling is a fixed pixel stride (independent of VOXEL_SIZE) so the draw
+ * cost — and the visible density — stays consistent when grid resolution changes.
  */
 function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
   phCtx.clearRect(0, 0, WIDTH, HEIGHT);
-  const { pheromone } = state;
   // Base radius ≈ 2× ant Z-ring (5.5 px) → 11–14 px
   const BASE_R = 13;
+  const STEP_PX = 4;
 
-  for (let vy = 0; vy < GRID_HEIGHT; vy++) {
-    for (let vx = 0; vx < GRID_WIDTH; vx++) {
-      const phIdx = vy * GRID_WIDTH + vx;
+  for (let y = 0; y < HEIGHT; y += STEP_PX) {
+    for (let x = 0; x < WIDTH; x += STEP_PX) {
       let maxPh = 0;
       for (let z = 0; z < DEPTH; z++) {
-        const ph = pheromone[z][phIdx];
+        const ph = getPheromone(x, y, z);
         if (ph > maxPh) maxPh = ph;
       }
       if (maxPh < 0.0005) continue;
@@ -116,11 +116,9 @@ function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
       const t = Math.min(1, Math.sqrt(maxPh * 20));
       const r = (BASE_R * t + 3) | 0;
       const g = (210 - t * 60) | 0;
-      const px = vx * VOXEL_SIZE + VOXEL_SIZE / 2;
-      const py = vy * VOXEL_SIZE + VOXEL_SIZE / 2;
       phCtx.fillStyle = `rgba(255,${g},0,${(t * 0.9).toFixed(2)})`;
       phCtx.beginPath();
-      phCtx.arc(px, py, r, 0, Math.PI * 2);
+      phCtx.arc(x, y, r, 0, Math.PI * 2);
       phCtx.fill();
     }
   }
@@ -283,7 +281,8 @@ function drawLegend(ctx: CanvasRenderingContext2D): void {
   const { px, py, w, headerH, lh } = _L;
   const boxH = _legendExpanded ? headerH + LEGEND.length * lh + 4 : headerH;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  // Solid backdrop so soil / pheromone behind the legend doesn't bleed through.
+  ctx.fillStyle = 'rgba(15,15,20,0.95)';
   ctx.fillRect(px, py, w, boxH);
   ctx.font = '8px monospace';
   ctx.fillStyle = '#aaaaaa';
