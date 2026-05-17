@@ -42,6 +42,9 @@ function fillGridPixels(data: Uint8ClampedArray): void {
         r = (105 + d * 45) | 0;
         g = (62 + d * 28) | 0;
         b = (22 + d * 18) | 0;
+      } else if (y >= GROUND_LEVEL) {
+        // Excavated tunnel — dark steel-blue, distinct from soil
+        r = 18; g = 50; b = 80;
       } else {
         r = 10; g = 10; b = 24;
       }
@@ -236,6 +239,7 @@ const LEGEND: [string, string][] = [
   ['#ff8c42', 'Carrying dirt'],
   ['#e8c040', 'Pheromone'],
   ['#ffd200', 'Ph pull → (dashed)'],
+  ['#123250', 'Tunnel (excavated)'],
   ['#7a5230', 'Soil'],
   ['#8c1e1e', 'Protected zone'],
   ['#6495ed', 'Ring: Z back'],
