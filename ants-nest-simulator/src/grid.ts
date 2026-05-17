@@ -108,18 +108,14 @@ export function dirtColor(cy: number): string {
 }
 
 /**
- * Soil fill at depth cy, sampled from the same gradient ramp the initial fill uses.
- * Using one formula for both initial substrate and ant-deposited material is what
- * lets the two blend seamlessly on the canvas.
+ * Soil fill color used for drawing into the mask canvas.
+ * Since we use a mask-based approach, this is always solid white.
  */
-export function soilFillStyle(cy: number): string {
-  const ratio = Math.max(0, Math.min(1, (cy - GROUND_LEVEL) / (HEIGHT - GROUND_LEVEL)));
-  const g = Math.round(180 - (180 - 120) * ratio);
-  const b = Math.round(255 - (255 - 230) * ratio);
-  return `rgb(0, ${g}, ${b})`;
+export function soilFillStyle(): string {
+  return 'white';
 }
 
-/** Back-compat alias retained for external imports; same formula as soilFillStyle. */
+/** Back-compat alias retained for external imports; same as soilFillStyle. */
 export const dirtFillStyle = soilFillStyle;
 
 /** Drops a small soil clump underground (loose fill after digging). Returns placed count. */
@@ -139,7 +135,7 @@ export function dropDirtInside(cx: number, cy: number, z: number): number {
   if (placed > 0) {
     const ctx = state.soilCtxs[z];
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = soilFillStyle(cy);
+    ctx.fillStyle = soilFillStyle();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();
@@ -162,7 +158,7 @@ export function fillDirt(cx: number, cy: number, z: number, radius: number): num
   if (placed > 0) {
     const ctx = state.soilCtxs[z];
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = soilFillStyle(cy);
+    ctx.fillStyle = soilFillStyle();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();

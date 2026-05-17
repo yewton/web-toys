@@ -21,12 +21,24 @@ function physicsStep(): void {
 }
 
 function renderNormal(ctx: CanvasRenderingContext2D): void {
+  const { gradientCanvas, offscreenCanvas, offscreenCtx, soilCanvases } = state;
+  if (!gradientCanvas || !offscreenCanvas || !offscreenCtx) return;
+
   const antsByZ: Ant[][] = Array.from({ length: DEPTH }, () => []);
   for (const ant of state.ants) antsByZ[ant.z].push(ant);
+
   for (let z = 0; z < DEPTH; z++) {
+    // Composite soil using the mask
+    offscreenCtx.clearRect(0, 0, WIDTH, HEIGHT);
+    offscreenCtx.drawImage(gradientCanvas, 0, 0);
+    offscreenCtx.globalCompositeOperation = 'destination-in';
+    offscreenCtx.drawImage(soilCanvases[z], 0, 0);
+    offscreenCtx.globalCompositeOperation = 'source-over';
+
     ctx.globalAlpha = 0.4;
-    ctx.drawImage(state.soilCanvases[z], 0, 0);
+    ctx.drawImage(offscreenCanvas, 0, 0);
     ctx.globalAlpha = 1.0;
+
     for (const ant of antsByZ[z]) ant.draw(ctx, ant === state.highlightedAnt);
   }
 }
@@ -59,6 +71,24 @@ export function initSimulation(): void {
   const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
   const protectedVyEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH) / VOXEL_SIZE);
 
+  // Initialize shared canvases
+  const gCanvas = document.createElement('canvas');
+  gCanvas.width = WIDTH;
+  gCanvas.height = HEIGHT;
+  const gCtx = gCanvas.getContext('2d')!;
+  const gradient = gCtx.createLinearGradient(0, GROUND_LEVEL, 0, HEIGHT);
+  gradient.addColorStop(0, 'rgb(0, 180, 255)');
+  gradient.addColorStop(1, 'rgb(0, 120, 230)');
+  gCtx.fillStyle = gradient;
+  gCtx.fillRect(0, 0, WIDTH, HEIGHT);
+  state.gradientCanvas = gCanvas;
+
+  const oCanvas = document.createElement('canvas');
+  oCanvas.width = WIDTH;
+  oCanvas.height = HEIGHT;
+  state.offscreenCanvas = oCanvas;
+  state.offscreenCtx = oCanvas.getContext('2d')!;
+
   for (let z = 0; z < DEPTH; z++) {
     state.grids[z] = Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH));
     state.pheromone.push(new Float32Array(GRID_WIDTH * GRID_HEIGHT));
@@ -68,11 +98,6 @@ export function initSimulation(): void {
     sCanvas.height = HEIGHT;
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true })!;
 
-    const gradient = sCtx.createLinearGradient(0, GROUND_LEVEL, 0, HEIGHT);
-    gradient.addColorStop(0, 'rgb(0, 180, 255)');
-    gradient.addColorStop(1, 'rgb(0, 120, 230)');
-    sCtx.fillStyle = gradient;
-
     for (let vy = 0; vy < GRID_HEIGHT; vy++) {
       for (let vx = 0; vx < GRID_WIDTH; vx++) {
         if (vy >= groundVy) {
@@ -80,6 +105,8 @@ export function initSimulation(): void {
         }
       }
     }
+    // Fill mask with solid color where soil exists
+    sCtx.fillStyle = 'white';
     sCtx.fillRect(0, GROUND_LEVEL, WIDTH, HEIGHT - GROUND_LEVEL);
 
     state.soilCanvases.push(sCanvas);

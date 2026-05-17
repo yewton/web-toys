@@ -7,6 +7,9 @@ export interface SimState {
   pheromone: Float32Array[];
   soilCanvases: HTMLCanvasElement[];
   soilCtxs: CanvasRenderingContext2D[];
+  gradientCanvas: HTMLCanvasElement | null;
+  offscreenCanvas: HTMLCanvasElement | null;
+  offscreenCtx: CanvasRenderingContext2D | null;
   ants: Ant[];
   targetAntCount: number;
   simulationSpeed: number;
@@ -19,6 +22,9 @@ export const state: SimState = {
   pheromone: [],
   soilCanvases: [],
   soilCtxs: [],
+  gradientCanvas: null,
+  offscreenCanvas: null,
+  offscreenCtx: null,
   ants: [],
   targetAntCount: 50,
   simulationSpeed: 1,
