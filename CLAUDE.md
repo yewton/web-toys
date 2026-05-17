@@ -61,7 +61,7 @@ CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` →
 - **`simulation.ts`** — core render loop. Composites the layered grid back-to-front to create a depth effect; initializes grids at voxel resolution. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests
 - **`debugView.ts`** — debug overlay. Voxel boundary lines are drawn only when `VOXEL_SIZE >= MIN_VOXEL_SIZE_FOR_GRID_LINES` (currently `3`) — finer grids are too dense to read
 
-Voxel grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). All soil paints use `soilFillStyle(y)`, the same gradient ramp as the initial fill, so deposits and substrate blend seamlessly on the canvas.
+Voxel grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). `soilCanvases` are per-layer binary opaque-white **masks** (encoding "is there soil here?"). Color comes from a shared y-axis `gradientCanvas` and is applied at render time by `source-in` compositing mask × gradient into `compositeCanvas`. Because every soil pixel — original substrate, ant mound, redeposited tunnel fill — takes its color from the same gradient sampled at its own y, all deposits blend seamlessly with the surrounding substrate. `soilFillStyle()` returns `'#fff'`; it's only used when adding to the mask.
 
 `VOXEL_SIZE` is a pure internal-resolution dial (allowed: `2`, `4`; default `2`). Body-scale constants in `constants.ts` (`DIG_RADIUS_PX`, `DIG_REACH_PX`, `DROP_GRAIN_RADIUS_PX`, `DROP_JITTER_PX`) are pixel-anchored — they describe the ant, not the grid. Changing `VOXEL_SIZE` only changes how grainy the substrate feels; the volume-conservation invariant (`carryAmount` in / `dropDirt` out) holds at every size. The UI selector writes to `localStorage` (`antSim.voxelSize`) and reloads the page so `constants.ts` reads the new value.
 
@@ -81,7 +81,7 @@ Tests live in `src/__tests__/*.test.ts` inside each app directory. The test envi
 ```ts
 function makeCanvasCtx(): CanvasRenderingContext2D {
   return { save: () => {}, restore: () => {}, beginPath: () => {}, arc: () => {}, fill: () => {},
-           fillStyle: '', globalCompositeOperation: 'source-over' } as unknown as CanvasRenderingContext2D;
+           clearRect: () => {}, fillStyle: '', globalCompositeOperation: 'source-over' } as unknown as CanvasRenderingContext2D;
 }
 ```
 
