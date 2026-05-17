@@ -74,8 +74,8 @@ export class Ant {
     const currentGridType = getGridType(this.x, this.y, this.z);
     if (currentGridType === 1 && this.y < GROUND_LEVEL) {
       // Ant got buried inside a surface mound — dig itself free.
-      // (Volume from rescue digs is discarded, not added to carry.)
-      digGel(this.x, this.y, this.z, 2.5);
+      // Use a smaller radius than digging to avoid destroying the mound too much.
+      digGel(this.x, this.y, this.z, 2.0);
     } else if (currentGridType === 3) {
       this.y -= 2.0;
     }
@@ -302,7 +302,7 @@ export class Ant {
     }
 
     // Frustrated surface ants open a fresh entrance where they happen to be.
-    if (!this.hasDirt && this.y < GROUND_LEVEL && this.surfaceFrustration > 120) {
+    if (!this.hasDirt && this.y < GROUND_LEVEL && this.surfaceFrustration > 300) {
       openEntrance(this.x, this.z, 4, PROTECTED_DEPTH + 1);
       this.surfaceFrustration = 0;
     }

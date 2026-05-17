@@ -165,21 +165,38 @@ const MOUND_TOP_LIMIT = 20;
 
 /**
  * Surface-deposit: place soil on top of the first solid below.
+ * Repeat until the given amount (voxel count) is satisfied.
  */
 export function dropDirt(x: number, y: number, z: number, amount: number): number {
   if (z < 0 || z >= DEPTH || amount <= 0) return 0;
 
+  let remaining = amount;
+  let attempts = 0;
+  const maxAttempts = amount * 8 + 4;
   const startScanY = Math.max(0, Math.floor(y) - VOXEL_SIZE_PX);
-  let hitY = -1;
-  for (let scanY = startScanY; scanY < HEIGHT; scanY++) {
-    if (getGridType(x, scanY, z) > 0) { hitY = scanY; break; }
+  const radius = DIG_RADIUS_PX;
+  const jitter = 6.0;
+
+  while (remaining > 0 && attempts < maxAttempts) {
+    attempts++;
+    const offset = (Math.random() - 0.5) * jitter * 2;
+    const targetX = Math.max(VOXEL_SIZE_PX, Math.min(WIDTH - VOXEL_SIZE_PX, x + offset));
+
+    let hitY = -1;
+    for (let scanY = startScanY; scanY < HEIGHT; scanY++) {
+      if (getGridType(targetX, scanY, z) > 0) { hitY = scanY; break; }
+    }
+    if (hitY < 0) continue;
+
+    // Center the circle so it overlaps with the surface hit
+    const placeY = hitY - radius * 0.8;
+    if (placeY <= MOUND_TOP_LIMIT) continue;
+
+    const placed = fillDirt(targetX, placeY, z, radius);
+    if (placed === 0) continue;
+    remaining -= placed;
   }
-  if (hitY < 0) return 0;
-
-  const placeY = hitY - VOXEL_SIZE_PX;
-  if (placeY <= MOUND_TOP_LIMIT) return 0;
-
-  return fillDirt(x, placeY, z, DIG_RADIUS_PX);
+  return amount - remaining;
 }
 
 /** Deposits pheromone at pixel (x, y, z). Pheromone is stored per-voxel. */

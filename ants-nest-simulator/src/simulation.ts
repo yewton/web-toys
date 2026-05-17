@@ -116,7 +116,9 @@ export function initSimulation(): void {
   const entranceCount = 2 + Math.floor(Math.random() * 3);
   for (let i = 0; i < entranceCount; i++) {
     const ex = WIDTH * (0.15 + Math.random() * 0.7);
-    openEntrance(ex, 1, 6, PROTECTED_DEPTH + 1);
+    for (let z = 0; z < DEPTH; z++) {
+      openEntrance(ex, z, 6, PROTECTED_DEPTH + 1);
+    }
   }
 
   state.ants = [];
