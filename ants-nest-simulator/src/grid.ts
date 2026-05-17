@@ -276,3 +276,28 @@ export function attemptCreateNewEntrance(): void {
     openEntrance(targetX, (targetZ + 1) % DEPTH, 3, PROTECTED_DEPTH + 1);
   }
 }
+
+/**
+ * Simple settling logic: loose soil (Type 1) above ground level falls down if there is air below it.
+ * This prevents "floating" mounds when ants dig out the base.
+ */
+export function settleSoil(): void {
+  for (let z = 0; z < DEPTH; z++) {
+    const grid = state.grids[z];
+    const ctx = state.soilCtxs[z];
+    const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+
+    for (let vx = 0; vx < GRID_WIDTH; vx++) {
+      // Top-down scan to allow "multi-step" falling in one pass
+      for (let vy = 0; vy < groundVy; vy++) {
+        if (grid[vy][vx] === 1 && grid[vy + 1][vx] === 0) {
+          grid[vy][vx] = 0;
+          grid[vy + 1][vx] = 1;
+          ctx.clearRect(vx * VOXEL_SIZE, vy * VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+          ctx.fillStyle = 'white';
+          ctx.fillRect(vx * VOXEL_SIZE, (vy + 1) * VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+        }
+      }
+    }
+  }
+}

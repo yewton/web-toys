@@ -10,14 +10,16 @@ import {
 } from './constants';
 import { state } from './state';
 import { Ant } from './Ant';
-import { openEntrance, evaporatePheromone } from './grid';
+import { openEntrance, evaporatePheromone, settleSoil } from './grid';
 import { drawDebugFrame, drawDebugOverlay } from './debugView';
 
 let _ctx: CanvasRenderingContext2D | null = null;
+let _physicsTick = 0;
 
 function physicsStep(): void {
   for (const ant of state.ants) ant.update();
   evaporatePheromone();
+  if (_physicsTick++ % 3 === 0) settleSoil();
 }
 
 function renderNormal(ctx: CanvasRenderingContext2D): void {
