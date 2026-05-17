@@ -8,6 +8,7 @@ export interface SimState {
   ants: Ant[];
   targetAntCount: number;
   simulationSpeed: number;
+  highlightedAnt: Ant | null;
 }
 
 export const state: SimState = {
@@ -18,4 +19,5 @@ export const state: SimState = {
   ants: [],
   targetAntCount: 50,
   simulationSpeed: 1,
+  highlightedAnt: null,
 };

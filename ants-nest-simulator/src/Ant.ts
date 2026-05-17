@@ -335,9 +335,29 @@ export class Ant {
     this.walkCycle += Math.hypot(drawDx * 0.4, drawDy * 0.4) * 0.6;
   }
 
-  draw(ctx: CanvasRenderingContext2D): void {
+  draw(ctx: CanvasRenderingContext2D, isHighlighted = false): void {
     ctx.save();
     ctx.translate(this.drawX, this.drawY);
+
+    if (isHighlighted) {
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 150);
+      const r = 14 + pulse * 4;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = 'rgba(255, 220, 0, 0.9)';
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 220, 0, ${0.75 + pulse * 0.25})`;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(0, -r - 3);
+      ctx.lineTo(-5, -r - 11);
+      ctx.lineTo(5, -r - 11);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(255, 220, 0, ${0.85 + pulse * 0.15})`;
+      ctx.fill();
+    }
 
     const scale = 1 + (this.z - 1) * 0.2;
     ctx.scale(scale, scale);
