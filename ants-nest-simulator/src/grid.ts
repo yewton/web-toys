@@ -113,12 +113,15 @@ function newChangedRect(): ChangedRect {
  * smooth blob with no gaps; the visible substrate edges therefore remain
  * smoothly curved even though the underlying grid is coarse.
  */
-// Per-voxel stamp radius. Each soil voxel contributes a circular blob; the
-// union of overlapping blobs is the visible substrate. Slightly under
-// VOXEL_SIZE keeps the silhouette tight (no chunky bleed past the underlying
-// grid boundary) while neighbours still overlap enough that solid regions
-// look continuous.
+// Per-voxel stamp radii. Each soil voxel contributes a circular blob; the
+// union of overlapping blobs is the visible substrate. Below ground a tight
+// stamp (just under VOXEL_SIZE) keeps tunnel silhouettes crisp; above ground
+// a deliberately fat stamp lets the sparse, jitter-scattered surface-mound
+// voxels merge into a single cohesive pile instead of reading as a row of
+// isolated towers floating above the ground line.
 const VOXEL_MASK_RADIUS = VOXEL_SIZE_PX * 0.85;
+const MOUND_MASK_RADIUS = VOXEL_SIZE_PX * 1.3;
+const GROUND_VY = Math.floor(GROUND_LEVEL / VOXEL_SIZE_PX);
 export function syncSoilMaskAll(z: number): void {
   syncMaskRegion(z, { minVx: 0, maxVx: GRID_WIDTH - 1, minVy: 0, maxVy: GRID_HEIGHT - 1 });
 }
@@ -141,12 +144,13 @@ function syncMaskRegion(z: number, rect: ChangedRect): void {
   const grid = state.grids[z];
   for (let vy = loVy; vy <= hiVy; vy++) {
     const cy = (vy + 0.5) * VOXEL_SIZE_PX;
+    const radius = vy < GROUND_VY ? MOUND_MASK_RADIUS : VOXEL_MASK_RADIUS;
     const row = grid[vy];
     for (let vx = loVx; vx <= hiVx; vx++) {
       if (row[vx] > 0) {
         const cx = (vx + 0.5) * VOXEL_SIZE_PX;
         ctx.beginPath();
-        ctx.arc(cx, cy, VOXEL_MASK_RADIUS, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.fill();
       }
     }

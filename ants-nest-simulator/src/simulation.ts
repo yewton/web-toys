@@ -37,7 +37,7 @@ function renderNormal(ctx: CanvasRenderingContext2D): void {
       // speckle texture rather than smooth flowing soil.
       compositeCtx.globalCompositeOperation = 'source-over';
       compositeCtx.clearRect(0, 0, WIDTH, HEIGHT);
-      compositeCtx.filter = 'blur(0.6px)';
+      compositeCtx.filter = 'blur(1px)';
       compositeCtx.drawImage(state.soilCanvases[z], 0, 0);
       compositeCtx.filter = 'none';
       compositeCtx.globalCompositeOperation = 'source-in';
