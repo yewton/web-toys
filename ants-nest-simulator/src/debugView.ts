@@ -4,7 +4,6 @@ import { getGridType } from './grid';
 
 // Cached across frames to reduce GC pressure
 let _gridImgData: ImageData | null = null;
-let _phImgData: ImageData | null = null;
 let _phCanvas: HTMLCanvasElement | null = null;
 let _phCtx: CanvasRenderingContext2D | null = null;
 
@@ -56,16 +55,18 @@ function fillGridPixels(data: Uint8ClampedArray): void {
 }
 
 /**
- * Pheromone source pixels for the offscreen canvas.
- * Uses near-full alpha so the CSS blur spreads a strong glow outward.
+ * Draw pheromone as filled circles (~2× the ant Z-ring radius) into the offscreen
+ * canvas. Sampling every STEP pixels keeps the loop fast while preserving coverage.
  */
-function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
+function fillPheromoneCanvas(phCtx: CanvasRenderingContext2D): void {
+  phCtx.clearRect(0, 0, WIDTH, HEIGHT);
   const { pheromone } = state;
+  const STEP = 4;
+  // Base radius ≈ 2× ant Z-ring (5.5 px) → 11–14 px
+  const BASE_R = 13;
 
-  for (let i = 3; i < data.length; i += 4) data[i] = 0;
-
-  for (let y = 0; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
+  for (let y = 0; y < HEIGHT; y += STEP) {
+    for (let x = 0; x < WIDTH; x += STEP) {
       const phIdx = y * WIDTH + x;
       let maxPh = 0;
       for (let z = 0; z < DEPTH; z++) {
@@ -74,46 +75,39 @@ function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
       }
       if (maxPh < 0.0005) continue;
 
-      // High source alpha so blur spreads a visible cloud even for faint trails
       const t = Math.min(1, Math.sqrt(maxPh * 20));
-      const idx = phIdx * 4;
-      data[idx] = 255;
-      data[idx + 1] = (210 - t * 60) | 0; // warm amber → yellow
-      data[idx + 2] = 0;
-      data[idx + 3] = (t * 255) | 0;
+      const r = (BASE_R * t + 3) | 0; // min visible radius of 3 px even for faint trails
+      const g = (210 - t * 60) | 0;   // warm amber → yellow
+      phCtx.fillStyle = `rgba(255,${g},0,${(t * 0.9).toFixed(2)})`;
+      phCtx.beginPath();
+      phCtx.arc(x, y, r, 0, Math.PI * 2);
+      phCtx.fill();
     }
   }
 }
 
 /**
- * Composite pheromone onto ctx using three blur passes (wide haze → mid glow → tight core)
- * plus a sin-based pulse and a slow lateral drift for a smoke-like appearance.
+ * Composite pheromone onto ctx: circles (wide base) → blur passes → pulse + drift.
+ * Two passes: a wide hazy bloom and a tighter glowing core.
  */
 function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
   ensurePhCanvas();
-  if (!_phImgData) _phImgData = _phCtx!.createImageData(WIDTH, HEIGHT);
-  fillPheromoneOverlayPixels(_phImgData.data);
-  _phCtx!.putImageData(_phImgData, 0, 0);
+  fillPheromoneCanvas(_phCtx!);
 
   const now = Date.now();
-  const pulse = 0.72 + 0.28 * Math.sin(now / 550);  // ~1.8 Hz oscillation
-  const drift = Math.sin(now / 1800) * 2;            // slow ±2 px lateral drift
+  const pulse = 0.72 + 0.28 * Math.sin(now / 550);
+  const drift = Math.sin(now / 1800) * 2;
 
   ctx.save();
 
-  // Pass 1 — wide ambient haze
-  ctx.globalAlpha = 0.32 * pulse;
-  ctx.filter = 'blur(14px)';
+  // Wide haze — blur softens circle edges into a diffuse cloud
+  ctx.globalAlpha = 0.35 * pulse;
+  ctx.filter = 'blur(10px)';
   ctx.drawImage(_phCanvas!, drift, 0);
 
-  // Pass 2 — mid glow
-  ctx.globalAlpha = 0.52 * pulse;
-  ctx.filter = 'blur(7px)';
-  ctx.drawImage(_phCanvas!, 0, 0);
-
-  // Pass 3 — tight luminous core
-  ctx.globalAlpha = 0.75 * pulse;
-  ctx.filter = 'blur(2px)';
+  // Glowing core — slight blur keeps edges smooth but preserves size
+  ctx.globalAlpha = 0.70 * pulse;
+  ctx.filter = 'blur(3px)';
   ctx.drawImage(_phCanvas!, 0, 0);
 
   ctx.restore();
