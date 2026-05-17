@@ -1,4 +1,13 @@
-import { WIDTH, HEIGHT, DEPTH, GROUND_LEVEL, PROTECTED_DEPTH } from './constants';
+import {
+  WIDTH,
+  HEIGHT,
+  DEPTH,
+  GROUND_LEVEL,
+  PROTECTED_DEPTH,
+  VOXEL_SIZE,
+  GRID_WIDTH,
+  GRID_HEIGHT,
+} from './constants';
 import { state } from './state';
 import { Ant } from './Ant';
 import { makeDiggable, evaporatePheromone } from './grid';
@@ -45,9 +54,12 @@ export function initSimulation(): void {
   state.soilCanvases = [];
   state.soilCtxs = [];
 
+  const groundVy = Math.floor(GROUND_LEVEL / VOXEL_SIZE);
+  const protectedVyEnd = Math.floor((GROUND_LEVEL + PROTECTED_DEPTH) / VOXEL_SIZE);
+
   for (let z = 0; z < DEPTH; z++) {
-    state.grids[z] = Array.from({ length: HEIGHT }, () => new Uint8Array(WIDTH));
-    state.pheromone.push(new Float32Array(WIDTH * HEIGHT));
+    state.grids[z] = Array.from({ length: GRID_HEIGHT }, () => new Uint8Array(GRID_WIDTH));
+    state.pheromone.push(new Float32Array(GRID_WIDTH * GRID_HEIGHT));
 
     const sCanvas = document.createElement('canvas');
     sCanvas.width = WIDTH;
@@ -59,10 +71,10 @@ export function initSimulation(): void {
     gradient.addColorStop(1, 'rgba(0, 120, 230, 0.45)');
     sCtx.fillStyle = gradient;
 
-    for (let y = 0; y < HEIGHT; y++) {
-      for (let x = 0; x < WIDTH; x++) {
-        if (y >= GROUND_LEVEL) {
-          state.grids[z][y][x] = y < GROUND_LEVEL + PROTECTED_DEPTH ? 3 : 1;
+    for (let vy = 0; vy < GRID_HEIGHT; vy++) {
+      for (let vx = 0; vx < GRID_WIDTH; vx++) {
+        if (vy >= groundVy) {
+          state.grids[z][vy][vx] = vy < protectedVyEnd ? 3 : 1;
         }
       }
     }

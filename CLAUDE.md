@@ -55,12 +55,15 @@ CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` →
 
 ### ants-nest-simulator
 
-- **`state.ts`** — singleton holding all mutable simulation state: `grids` (3D cell array), `pheromone` (Float32Array per layer), `soilCtxs` (one canvas 2D context per Z layer for rendering soil), `ants` array, and slider values
-- **`grid.ts`** — all grid read/write functions. Exported functions are the only way to modify `state.grids` and `state.pheromone` from outside this module
-- **`Ant.ts`** — `Ant` class with `update()` (simulation logic) and `draw()` (canvas rendering) methods. `update()` calls grid functions; `draw()` requires a canvas context
-- **`simulation.ts`** — core render loop. Composites the layered grid (WIDTH × HEIGHT × DEPTH, where DEPTH=3) back-to-front to create a depth effect. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests.
+- **`state.ts`** — singleton holding all mutable simulation state: `grids` (3D voxel array, sized `GRID_WIDTH × GRID_HEIGHT × DEPTH`), `pheromone` (per-voxel `Float32Array` per layer), `soilCtxs` (one full-resolution canvas 2D context per Z layer for rendering soil), `ants` array, and slider values
+- **`grid.ts`** — all grid read/write functions. Public API takes **pixel** coordinates; the voxel conversion happens inside. `digGel` / `fillDirt` / `dropDirtInside` return the number of voxels changed so callers can conserve dug volume. `dropDirt(x, y, z, amount)` consumes that count to stack a mound near the ant
+- **`Ant.ts`** — `Ant` class with `update()` (simulation logic) and `draw()` (canvas rendering) methods. Tracks `carryAmount` in voxel units, hands it back to `dropDirt` on deposit (volume conservation)
+- **`simulation.ts`** — core render loop. Composites the layered grid back-to-front to create a depth effect; initializes grids at voxel resolution. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests
+- **`debugView.ts`** — debug overlay. Voxel boundary lines are drawn only when `VOXEL_SIZE >= MIN_VOXEL_SIZE_FOR_GRID_LINES` (currently `3`) — finer grids are too dense to read
 
-Grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). All soil paints use `soilFillStyle(y)`, the same gradient ramp as the initial fill, so deposits and substrate blend seamlessly on the canvas.
+Voxel grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). All soil paints use `soilFillStyle(y)`, the same gradient ramp as the initial fill, so deposits and substrate blend seamlessly on the canvas.
+
+`VOXEL_SIZE` is a pure internal-resolution dial (allowed: `2`, `4`; default `2`). Body-scale constants in `constants.ts` (`DIG_RADIUS_PX`, `DIG_REACH_PX`, `DROP_GRAIN_RADIUS_PX`, `DROP_JITTER_PX`) are pixel-anchored — they describe the ant, not the grid. Changing `VOXEL_SIZE` only changes how grainy the substrate feels; the volume-conservation invariant (`carryAmount` in / `dropDirt` out) holds at every size. The UI selector writes to `localStorage` (`antSim.voxelSize`) and reloads the page so `constants.ts` reads the new value.
 
 ### solitaire-cascade
 
