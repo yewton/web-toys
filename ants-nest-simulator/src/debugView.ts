@@ -3,7 +3,7 @@ import { state } from './state';
 import { getGridType } from './grid';
 
 // Cached across frames to reduce GC pressure
-let _debugImgData: ImageData | null = null;
+let _gridImgData: ImageData | null = null;
 let _phImgData: ImageData | null = null;
 let _phCanvas: HTMLCanvasElement | null = null;
 let _phCtx: CanvasRenderingContext2D | null = null;
@@ -21,13 +21,13 @@ const Z_RING = ['#6495ed', '#c8c8c8', '#ffd700'];
 
 // ─── PIXEL FILL ───────────────────────────────────────────────────────────────
 
-function fillDebugPixels(data: Uint8ClampedArray): void {
-  const { grids, pheromone } = state;
+/** Grid cell colors only — no pheromone mixed in */
+function fillGridPixels(data: Uint8ClampedArray): void {
+  const { grids } = state;
 
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
       const idx = (y * WIDTH + x) * 4;
-      const phIdx = y * WIDTH + x;
 
       let maxType = 0;
       for (let z = 0; z < DEPTH; z++) {
@@ -35,33 +35,16 @@ function fillDebugPixels(data: Uint8ClampedArray): void {
         if (cell > maxType) maxType = cell;
       }
 
-      let maxPh = 0;
-      for (let z = 0; z < DEPTH; z++) {
-        const ph = pheromone[z][phIdx];
-        if (ph > maxPh) maxPh = ph;
-      }
-
       let r: number, g: number, b: number;
       if (maxType === 3) {
-        // Protected zone — dark red
         r = 130; g = 25; b = 25;
       } else if (maxType === 1) {
-        // Soil — brown gradient darkening with depth
         const d = y / HEIGHT;
         r = (105 + d * 45) | 0;
         g = (62 + d * 28) | 0;
         b = (22 + d * 18) | 0;
       } else {
-        // Air — near black
         r = 10; g = 10; b = 24;
-      }
-
-      // Blend pheromone as yellow glow (sqrt curve to reveal faint trails)
-      if (maxPh > 0.0005) {
-        const t = Math.min(1, Math.sqrt(maxPh * 20));
-        r = (r + (255 - r) * t * 0.95) | 0;
-        g = (g + (210 - g) * t * 0.65) | 0;
-        b = (b * (1 - t * 0.9)) | 0;
       }
 
       data[idx] = r;
@@ -72,6 +55,7 @@ function fillDebugPixels(data: Uint8ClampedArray): void {
   }
 }
 
+/** Pheromone heatmap into the offscreen canvas's pixel data (RGBA with alpha) */
 function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
   const { pheromone } = state;
 
@@ -97,6 +81,15 @@ function fillPheromoneOverlayPixels(data: Uint8ClampedArray): void {
   }
 }
 
+/** Composite the pheromone offscreen canvas onto ctx */
+function drawPheromoneLayer(ctx: CanvasRenderingContext2D): void {
+  ensurePhCanvas();
+  if (!_phImgData) _phImgData = _phCtx!.createImageData(WIDTH, HEIGHT);
+  fillPheromoneOverlayPixels(_phImgData.data);
+  _phCtx!.putImageData(_phImgData, 0, 0);
+  ctx.drawImage(_phCanvas!, 0, 0);
+}
+
 // ─── ANT OVERLAYS ─────────────────────────────────────────────────────────────
 
 function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
@@ -105,7 +98,6 @@ function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
 
   for (const ant of state.ants) {
     const { drawX: ax, drawY: ay, angle, wanderAngle, hasDirt, z } = ant;
-    // Green = exploring, orange = carrying dirt
     const sc = hasDirt ? '#ff8c42' : '#50c878';
 
     ctx.save();
@@ -129,7 +121,7 @@ function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
     ctx.fill();
 
     if (fullDetail) {
-      // Wander target direction (dashed) — where the ant wants to go long-term
+      // Wander target direction (dashed) — long-term goal angle
       ctx.setLineDash([2, 3]);
       ctx.strokeStyle = hasDirt ? 'rgba(255,180,100,0.5)' : 'rgba(130,220,160,0.5)';
       ctx.lineWidth = 1;
@@ -139,7 +131,7 @@ function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Sensor dots: front / left / right (red = obstacle, green = clear)
+      // Sensor dots: front / left / right
       for (const da of [0, -Math.PI / 3, Math.PI / 3]) {
         const sa = angle + da;
         const sx = ax + Math.cos(sa) * SENSOR_DIST;
@@ -157,7 +149,7 @@ function drawAnts(ctx: CanvasRenderingContext2D, fullDetail: boolean): void {
     ctx.arc(ax, ay, fullDetail ? 3 : 2.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Z-layer ring (back / mid / front)
+    // Z-layer ring
     ctx.strokeStyle = Z_RING[z];
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -215,26 +207,30 @@ function drawGroundLine(ctx: CanvasRenderingContext2D): void {
 
 // ─── PUBLIC API ───────────────────────────────────────────────────────────────
 
-/** Full debug frame: grid visualization + pheromone heatmap + ant overlays + legend */
+/**
+ * Full debug frame.
+ * Draw order: grid → ground line → ants → pheromone → legend
+ * Pheromone is rendered last so it is visible even where ants overlap.
+ */
 export function drawDebugFrame(ctx: CanvasRenderingContext2D): void {
-  if (!_debugImgData) _debugImgData = ctx.createImageData(WIDTH, HEIGHT);
-  fillDebugPixels(_debugImgData.data);
-  ctx.putImageData(_debugImgData, 0, 0);
+  if (!_gridImgData) _gridImgData = ctx.createImageData(WIDTH, HEIGHT);
+  fillGridPixels(_gridImgData.data);
+  ctx.putImageData(_gridImgData, 0, 0);
   drawGroundLine(ctx);
   drawAnts(ctx, true);
+  drawPheromoneLayer(ctx);   // ← after ants so pheromone is never hidden
   drawLegend(ctx);
 }
 
-/** Overlay additions on top of normal rendering: pheromone heatmap + simplified ant debug */
+/**
+ * Overlay additions on top of normal rendering.
+ * Draw order: ants → pheromone
+ * Pheromone is rendered last so it is visible even where ants overlap.
+ */
 export function drawDebugOverlay(ctx: CanvasRenderingContext2D): void {
-  ensurePhCanvas();
-  if (!_phImgData) _phImgData = _phCtx!.createImageData(WIDTH, HEIGHT);
-  fillPheromoneOverlayPixels(_phImgData.data);
-  _phCtx!.putImageData(_phImgData, 0, 0);
-  ctx.drawImage(_phCanvas!, 0, 0);
-
   ctx.save();
   ctx.globalAlpha = 0.8;
   drawAnts(ctx, false);
   ctx.restore();
+  drawPheromoneLayer(ctx);   // ← after ants so pheromone is never hidden
 }
