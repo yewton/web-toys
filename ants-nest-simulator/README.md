@@ -23,9 +23,10 @@ A simulator where ants autonomously dig their nest using a collective-intelligen
 | Value | Meaning |
 |---|---|
 | `0` | Air (passable) |
-| `1` | Diggable soil (gel) |
-| `2` | Loose dirt deposited by ants on the surface |
+| `1` | Soil — diggable. A single voxel type for both the original substrate and ant-deposited material |
 | `3` | Protected zone (top `PROTECTED_DEPTH = 6` px, not diggable) |
+
+Rendering: a single `soilCanvas` per Z layer holds the entire substrate. `digGel` cuts via `destination-out`; deposits (`dropDirtInside`, `fillDirt`, `dropDirt`) paint into the same canvas using `soilFillStyle(y)`, the same gradient ramp as the initial fill. The lack of a separate dirt layer is what makes mounds and tunnel re-fills visually seamless with the surrounding substrate.
 
 ### Pheromones
 
@@ -71,8 +72,8 @@ The counter also resets whenever the ant reaches the underground. This lets disc
 
 ### Dirt Mound and Burial Protection
 
-- `dropDirt` scans the [25, 50] y-band for any solid cell (type 1/2/3) as a landing target, so deposited dirt stacks on existing mounds instead of growing unbounded. Mound height is bounded at `MOUND_TOP_LIMIT = 20`.
-- Ants embedded in type-2 (deposited dirt) below ground level call `digGel` locally to dig out, instead of teleporting upward. Prevents the y=0 trap where tall mounds engulf ants.
+- `dropDirt` scans the [25, 50] y-band for any solid cell (type 1 or 3) as a landing target, so deposited soil stacks on existing mounds instead of growing unbounded. Mound height is bounded at `MOUND_TOP_LIMIT = 20`.
+- Ants embedded in soil above ground level (the mound interior) call `digGel` locally to dig out, instead of teleporting upward. Prevents the y=0 trap where tall mounds engulf ants.
 
 ## Module Structure
 
