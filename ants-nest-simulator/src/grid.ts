@@ -92,6 +92,38 @@ export function hasRealCardinalSoilNeighbour(vx: number, vy: number, vz: number)
   return false;
 }
 
+/** True if removing the soil voxel at (vx, vy, vz) would leave any of its
+ *  cardinal soil neighbours with zero in-bounds soil support (OOB does
+ *  not count). Used by dig logic to refuse digs that would create
+ *  floating soil — the soil-version of the standing rule that already
+ *  prevents free-floating ants. */
+export function digWouldOrphanNeighbour(vx: number, vy: number, vz: number): boolean {
+  for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
+    const sx = vx + dx;
+    const sy = vy + dy;
+    const sz = vz + dz;
+    if (sx < 0 || sx >= GRID_WIDTH) continue;
+    if (sy < 0 || sy >= GRID_HEIGHT) continue;
+    if (sz < 0 || sz >= DEPTH) continue;
+    if (state.grids[sz][sy][sx] === AIR) continue;
+    // (sx, sy, sz) is a soil neighbour. After (vx, vy, vz) becomes air,
+    // does it still have any other in-bounds soil cardinal neighbour?
+    let hasOther = false;
+    for (const [dx2, dy2, dz2] of CARDINAL_OFFSETS) {
+      const nx = sx + dx2;
+      const ny = sy + dy2;
+      const nz = sz + dz2;
+      if (nx === vx && ny === vy && nz === vz) continue;
+      if (nx < 0 || nx >= GRID_WIDTH) continue;
+      if (ny < 0 || ny >= GRID_HEIGHT) continue;
+      if (nz < 0 || nz >= DEPTH) continue;
+      if (state.grids[nz][ny][nx] !== AIR) { hasOther = true; break; }
+    }
+    if (!hasOther) return true;
+  }
+  return false;
+}
+
 /** Standing rule: the voxel itself is air, AND at least one cardinal
  *  neighbour is soil. This is the only constraint on ant placement. */
 export function canStandAt(vx: number, vy: number, vz: number): boolean {

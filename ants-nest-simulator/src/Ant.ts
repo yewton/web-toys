@@ -25,6 +25,7 @@ import {
   voxelCentrePx,
   gradientRgbaAt,
   hasRealCardinalSoilNeighbour,
+  digWouldOrphanNeighbour,
 } from './grid';
 
 /**
@@ -248,7 +249,9 @@ export class Ant {
   /** Dig the most heading-aligned soil voxel out of the ant's 6 cardinal
    *  neighbours. Because an ant lives in an air voxel with a soil neighbour,
    *  "in front" is almost always more air; targeting a soil-side wall is
-   *  what actually progresses the tunnel network. Returns true on a dig. */
+   *  what actually progresses the tunnel network. Skips candidates whose
+   *  removal would orphan an adjacent soil voxel (the "no floating soil"
+   *  invariant — the soil-side of the standing rule). Returns true on a dig. */
   private tryDigForward(): boolean {
     const ax = Math.cos(this.angle);
     const ay = Math.sin(this.angle);
@@ -256,9 +259,9 @@ export class Ant {
     let bestOff: readonly [number, number, number] | null = null;
     for (const off of CARDINAL_OFFSETS) {
       const [dx, dy, dz] = off;
-      if (getVoxel(this.vx + dx, this.vy + dy, this.vz + dz) !== SOIL_DIGGABLE) continue;
-      // 2D heading score; Z-only neighbours score 0 (neutral) so the ant can
-      // still dig sideways into the adjacent layer when nothing else is aligned.
+      const tx = this.vx + dx, ty = this.vy + dy, tz = this.vz + dz;
+      if (getVoxel(tx, ty, tz) !== SOIL_DIGGABLE) continue;
+      if (digWouldOrphanNeighbour(tx, ty, tz)) continue;
       const dot = dx === 0 && dy === 0 ? 0 : dx * ax + dy * ay;
       if (dot > bestDot) {
         bestDot = dot;
@@ -278,18 +281,20 @@ export class Ant {
   }
 
   /** Last-resort: when the ant is sealed in and there are no valid moves,
-   *  dig the first diggable cardinal neighbour. The dug voxel is discarded
-   *  if hands are full (rescue dig, not productive). */
+   *  dig the first non-orphaning diggable cardinal neighbour. Keeps the
+   *  no-floating-soil invariant even during rescue digs — if every
+   *  candidate would orphan something, the ant stays put and relies on
+   *  the distress pheromone to bring help. */
   private forceDigAdjacent(): void {
     for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
       const nx = this.vx + dx;
       const ny = this.vy + dy;
       const nz = this.vz + dz;
-      if (getVoxel(nx, ny, nz) === SOIL_DIGGABLE) {
-        const dug = digVoxel(nx, ny, nz);
-        if (dug && !this.carrying) this.carrying = true;
-        return;
-      }
+      if (getVoxel(nx, ny, nz) !== SOIL_DIGGABLE) continue;
+      if (digWouldOrphanNeighbour(nx, ny, nz)) continue;
+      const dug = digVoxel(nx, ny, nz);
+      if (dug && !this.carrying) this.carrying = true;
+      return;
     }
   }
 
