@@ -6,6 +6,7 @@ import {
   CARRY_MIN_TRAVEL_SQ,
   PHEROMONE_DEPOSIT_EXPLORE,
   PHEROMONE_DEPOSIT_RETURN,
+  PHEROMONE_DEPOSIT_DISTRESS,
   UPWARD_BIAS_STRENGTH,
   DOWNWARD_BIAS_STRENGTH,
   PHEROMONE_PULL_STRENGTH,
@@ -165,15 +166,18 @@ export class Ant {
     }
 
     const candidates = this.collectMoveCandidates();
+    const hasXyMove = candidates.some(
+      (c) => c.offset.dx !== 0 || c.offset.dy !== 0,
+    );
 
-    // Dead-end: no valid neighbour to step into. Force a dig of an adjacent
-    // soil voxel so the ant can re-open a path (or fill itself silly if its
-    // hands are already full — pick up no extra in that case).
-    if (candidates.length === 0) {
-      if (Math.random() < DIG_PROB_DEADEND) {
-        this.forceDigAdjacent();
-        return;
-      }
+    // XY-stuck: visually parked, but emit a "come help me" pheromone so
+    // nearby ants are pulled in. Their digs may free us. We still try the
+    // force-dig escape — if any adjacent soil exists we can chew our way
+    // out single-handed.
+    if (!hasXyMove) {
+      depositPheromone(this.vx, this.vy, this.vz, PHEROMONE_DEPOSIT_DISTRESS);
+      if (Math.random() < DIG_PROB_DEADEND) this.forceDigAdjacent();
+      return;
     }
 
     // Dig in front (only with free hands): peek at the cardinal voxel nearest
@@ -184,13 +188,7 @@ export class Ant {
 
     // Default action: pick a candidate weighted by heading + pheromone + bias
     // and start interpolating toward it.
-    if (candidates.length > 0) {
-      this.startMove(this.sampleCandidate(candidates));
-      return;
-    }
-
-    // No candidates AND we didn't force-dig: spin the heading and wait.
-    this.angle += (Math.random() - 0.5) * 0.8;
+    this.startMove(this.sampleCandidate(candidates));
   }
 
   // ─── Drop ──────────────────────────────────────────────────────────────────

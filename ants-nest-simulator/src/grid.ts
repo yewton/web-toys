@@ -1,5 +1,4 @@
 import {
-  WIDTH,
   HEIGHT,
   DEPTH,
   INITIAL_AIR_TOP_Y,
@@ -178,43 +177,65 @@ export function gradientRgbaAt(y: number): string {
 }
 
 // ─── Mask painting ───────────────────────────────────────────────────────────
-// Each soil voxel paints itself as an opaque circle. Overlapping circles merge
-// into a smooth blob, so the visible substrate stays curved even though the
-// underlying grid is coarse.
+// Each soil voxel paints itself as a rounded rectangle whose corners are
+// rounded only where both adjacent cardinal neighbours (in the same Z layer)
+// are air. Where a neighbour is also soil, that side is shared with the
+// neighbouring voxel and the corner stays sharp — so connected soil voxels
+// form one continuous rounded polygon, and isolated voxels become near-pills.
+// Stacking three transparency-blended layers gives the layered appearance.
 
-const VOXEL_MASK_RADIUS = VOXEL_SIZE * 0.85;
+const CORNER_RADIUS = VOXEL_SIZE * 0.5;
 
-export function syncSoilMaskAll(z: number): void {
-  const ctx = state.soilCtxs[z];
-  if (!ctx) return;
-  ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  ctx.fillStyle = '#fff';
-  const grid = state.grids[z];
-  for (let vy = 0; vy < GRID_HEIGHT; vy++) {
-    const cy = voxelCentrePx(vy);
-    const row = grid[vy];
-    for (let vx = 0; vx < GRID_WIDTH; vx++) {
-      if (row[vx] > 0) {
-        const cx = voxelCentrePx(vx);
-        ctx.beginPath();
-        ctx.arc(cx, cy, VOXEL_MASK_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
+function paintVoxelRect(
+  ctx: CanvasRenderingContext2D,
+  grid: Uint8Array[],
+  vx: number,
+  vy: number,
+): void {
+  // OOB neighbours count as soil — at the world edge we want the soil to
+  // butt up flat against the boundary, not rounded into nothing.
+  const leftAir  = vx > 0                ? grid[vy][vx - 1] === AIR : false;
+  const rightAir = vx < GRID_WIDTH - 1   ? grid[vy][vx + 1] === AIR : false;
+  const upAir    = vy > 0                ? grid[vy - 1][vx] === AIR : false;
+  const downAir  = vy < GRID_HEIGHT - 1  ? grid[vy + 1][vx] === AIR : false;
+  const tl = upAir   && leftAir  ? CORNER_RADIUS : 0;
+  const tr = upAir   && rightAir ? CORNER_RADIUS : 0;
+  const br = downAir && rightAir ? CORNER_RADIUS : 0;
+  const bl = downAir && leftAir  ? CORNER_RADIUS : 0;
+  const px = vx * VOXEL_SIZE;
+  const py = vy * VOXEL_SIZE;
+  ctx.beginPath();
+  ctx.roundRect(px, py, VOXEL_SIZE, VOXEL_SIZE, [tl, tr, br, bl]);
+  ctx.fill();
 }
 
-/** Re-paint a single voxel's neighbourhood after a dig/place. We clear a
- *  small rect and re-stamp the surrounding 3×3 voxels so adjacent overlaps
- *  remain seamless. */
+export function syncSoilMaskAll(z: number): void {
+  syncMaskRegion(z, 0, GRID_WIDTH - 1, 0, GRID_HEIGHT - 1);
+}
+
+/** Re-paint a single voxel's 3×3 neighbourhood. The padding catches the
+ *  case where a neighbour's corner-rounding configuration also flips when
+ *  this voxel toggles. */
 function syncMaskVoxel(z: number, vx: number, vy: number): void {
+  const pad = 1;
+  syncMaskRegion(
+    z,
+    Math.max(0, vx - pad),
+    Math.min(GRID_WIDTH - 1, vx + pad),
+    Math.max(0, vy - pad),
+    Math.min(GRID_HEIGHT - 1, vy + pad),
+  );
+}
+
+function syncMaskRegion(
+  z: number,
+  loVx: number,
+  hiVx: number,
+  loVy: number,
+  hiVy: number,
+): void {
   const ctx = state.soilCtxs[z];
   if (!ctx) return;
-  const pad = 1;
-  const loVx = Math.max(0, vx - pad);
-  const hiVx = Math.min(GRID_WIDTH - 1, vx + pad);
-  const loVy = Math.max(0, vy - pad);
-  const hiVy = Math.min(GRID_HEIGHT - 1, vy + pad);
   const x0 = loVx * VOXEL_SIZE;
   const y0 = loVy * VOXEL_SIZE;
   const w = (hiVx - loVx + 1) * VOXEL_SIZE;
@@ -223,15 +244,9 @@ function syncMaskVoxel(z: number, vx: number, vy: number): void {
   ctx.fillStyle = '#fff';
   const grid = state.grids[z];
   for (let yy = loVy; yy <= hiVy; yy++) {
-    const cy = voxelCentrePx(yy);
     const row = grid[yy];
     for (let xx = loVx; xx <= hiVx; xx++) {
-      if (row[xx] > 0) {
-        const cx = voxelCentrePx(xx);
-        ctx.beginPath();
-        ctx.arc(cx, cy, VOXEL_MASK_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      if (row[xx] > 0) paintVoxelRect(ctx, grid, xx, yy);
     }
   }
 }

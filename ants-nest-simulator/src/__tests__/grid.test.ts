@@ -44,6 +44,7 @@ function makeCanvasCtx(): CanvasRenderingContext2D {
     restore: () => {},
     beginPath: () => {},
     arc: () => {},
+    roundRect: () => {},
     fill: () => {},
     clearRect: () => {},
     fillStyle: '',

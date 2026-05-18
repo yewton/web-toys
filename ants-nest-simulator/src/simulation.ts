@@ -37,7 +37,9 @@ function renderNormal(ctx: CanvasRenderingContext2D): void {
     if (gradientCanvas && compositeCanvas && compositeCtx) {
       compositeCtx.globalCompositeOperation = 'source-over';
       compositeCtx.clearRect(0, 0, WIDTH, HEIGHT);
-      compositeCtx.filter = 'blur(1px)';
+      // Light blur — the rounded-rect mask already shapes the edge cleanly,
+      // so we only need a hair of softening to take the digital edge off.
+      compositeCtx.filter = 'blur(0.3px)';
       compositeCtx.drawImage(state.soilCanvases[z], 0, 0);
       compositeCtx.filter = 'none';
       compositeCtx.globalCompositeOperation = 'source-in';

@@ -64,6 +64,10 @@ export const DIG_PROB_DEADEND = 1.0;
 export const PHEROMONE_DECAY = 0.997;
 export const PHEROMONE_DEPOSIT_EXPLORE = 0.001;
 export const PHEROMONE_DEPOSIT_RETURN = 0.005;
+/** Per-frame pheromone an XY-stuck ant emits as a "come help me" signal.
+ *  Much higher than the regular trail deposits so the local gradient pulls
+ *  nearby ants in, who may then dig the wall and free the stuck ant. */
+export const PHEROMONE_DEPOSIT_DISTRESS = 0.08;
 
 // ─── Direction weighting ─────────────────────────────────────────────────────
 
