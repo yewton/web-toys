@@ -24,6 +24,7 @@ import {
   getPheromone,
   voxelCentrePx,
   gradientRgbaAt,
+  hasRealCardinalSoilNeighbour,
 } from './grid';
 
 /**
@@ -228,6 +229,11 @@ export class Ant {
         const ty = this.vy + o.dy;
         const tz = this.vz + o.dz;
         if (cardinalAirCount(tx, ty, tz) < 3) continue;
+        // The world walls (OOB) do not anchor a placement — the deposit
+        // must connect to an actual in-bounds soil voxel. Without this,
+        // mounds grow to the world ceiling indefinitely because OOB-up
+        // is "soil" for standing purposes.
+        if (!hasRealCardinalSoilNeighbour(tx, ty, tz)) continue;
         if (placeVoxel(tx, ty, tz)) {
           this.carrying = false;
           return true;

@@ -72,6 +72,26 @@ export function hasCardinalSoilNeighbour(vx: number, vy: number, vz: number): bo
   return false;
 }
 
+/** Like `hasCardinalSoilNeighbour` but the world walls (OOB) do NOT count
+ *  — only real in-bounds soil. Used to gate soil placement so a deposit
+ *  cannot "stick" to the world boundary alone; it must connect to an
+ *  actual existing soil voxel. Without this guard, drops near the ceiling
+ *  / world edges accumulate freely because OOB-up is soil-typed for
+ *  standing purposes, which would otherwise let mounds grow to the
+ *  ceiling indefinitely. */
+export function hasRealCardinalSoilNeighbour(vx: number, vy: number, vz: number): boolean {
+  for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
+    const nx = vx + dx;
+    const ny = vy + dy;
+    const nz = vz + dz;
+    if (nx < 0 || nx >= GRID_WIDTH) continue;
+    if (ny < 0 || ny >= GRID_HEIGHT) continue;
+    if (nz < 0 || nz >= DEPTH) continue;
+    if (state.grids[nz][ny][nx] !== AIR) return true;
+  }
+  return false;
+}
+
 /** Standing rule: the voxel itself is air, AND at least one cardinal
  *  neighbour is soil. This is the only constraint on ant placement. */
 export function canStandAt(vx: number, vy: number, vz: number): boolean {
