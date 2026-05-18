@@ -184,16 +184,15 @@ export class Ant {
     }
 
     // Dig in front (only with free hands): peek at the cardinal voxel nearest
-    // the heading; if it is diggable, take a bite instead of moving. Skipped
-    // when the ant is in a wide-open cavity — that's the rule that keeps
-    // dig zones from sprawling into round funnels. The ant has to leave the
-    // chamber and find a tighter face before digging more.
-    if (
-      !this.carrying &&
-      !this.isInWideCavity() &&
-      Math.random() < DIG_PROB_BASE
-    ) {
-      if (this.tryDigForward()) return;
+    // the heading; if it is diggable, take a bite instead of moving. The
+    // wide-cavity skip is biased by dig probability rather than a hard
+    // cutoff — in open chambers the chance halves, so digs still happen
+    // but ants more often move out of the chamber instead.
+    if (!this.carrying) {
+      const digProb = this.isInWideCavity() ? DIG_PROB_BASE * 0.5 : DIG_PROB_BASE;
+      if (Math.random() < digProb) {
+        if (this.tryDigForward()) return;
+      }
     }
 
     // Default action: pick a candidate weighted by heading + pheromone + bias
@@ -254,31 +253,33 @@ export class Ant {
 
   // ─── Dig ───────────────────────────────────────────────────────────────────
 
-  /** Sample the local 5×5×3 neighbourhood and return true if it's mostly
-   *  air. The ant skips digging in such a region — that's what keeps the
-   *  excavated zone elongating into a tunnel rather than expanding into
-   *  an isotropic chamber. */
+  /** Sample the 8 in-plane (current Z) neighbours and return true if most
+   *  are air. The ant skips digging in such a spot so the excavated zone
+   *  can elongate into a tunnel rather than expand into an isotropic
+   *  chamber. Sample is intentionally tight — including the open-air
+   *  region above the ant in the count would stop digging immediately
+   *  at every entrance, capping it at a shallow funnel. */
   private isInWideCavity(): boolean {
     let air = 0;
     let total = 0;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          if (dx === 0 && dy === 0 && dz === 0) continue;
-          total++;
-          if (isAir(this.vx + dx, this.vy + dy, this.vz + dz)) air++;
-        }
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        total++;
+        if (isAir(this.vx + dx, this.vy + dy, this.vz)) air++;
       }
     }
     return air / total >= WIDE_CAVITY_AIR_RATIO;
   }
 
-  /** Dig the most heading-aligned soil voxel out of the ant's 6 cardinal
-   *  neighbours. Because an ant lives in an air voxel with a soil neighbour,
-   *  "in front" is almost always more air; targeting a soil-side wall is
-   *  what actually progresses the tunnel network. Skips candidates whose
-   *  removal would orphan an adjacent soil voxel (the "no floating soil"
-   *  invariant — the soil-side of the standing rule). Returns true on a dig. */
+  /** Dig the *exact* heading-aligned cardinal voxel — and only if that
+   *  voxel is diggable soil. If the heading-aligned cardinal is already
+   *  air (i.e. the tunnel continues in that direction), the ant moves
+   *  through it instead of widening sideways. Without this strictness,
+   *  the dig fell back to whichever soil neighbour scored highest,
+   *  meaning that at the bottom of a tunnel an ant heading down with
+   *  the below-voxel already excavated would dig laterally and turn
+   *  the tunnel into a funnel. */
   private tryDigForward(): boolean {
     const ax = Math.cos(this.angle);
     const ay = Math.sin(this.angle);
@@ -286,9 +287,6 @@ export class Ant {
     let bestOff: readonly [number, number, number] | null = null;
     for (const off of CARDINAL_OFFSETS) {
       const [dx, dy, dz] = off;
-      const tx = this.vx + dx, ty = this.vy + dy, tz = this.vz + dz;
-      if (getVoxel(tx, ty, tz) !== SOIL_DIGGABLE) continue;
-      if (digWouldOrphanNeighbour(tx, ty, tz)) continue;
       const dot = dx === 0 && dy === 0 ? 0 : dx * ax + dy * ay;
       if (dot > bestDot) {
         bestDot = dot;
@@ -296,12 +294,17 @@ export class Ant {
       }
     }
     if (!bestOff) return false;
-    const dx = bestOff[0], dy = bestOff[1], dz = bestOff[2];
-    if (digVoxel(this.vx + dx, this.vy + dy, this.vz + dz)) {
+    const [dx, dy, dz] = bestOff;
+    const tx = this.vx + dx;
+    const ty = this.vy + dy;
+    const tz = this.vz + dz;
+    if (getVoxel(tx, ty, tz) !== SOIL_DIGGABLE) return false;
+    if (digWouldOrphanNeighbour(tx, ty, tz)) return false;
+    if (digVoxel(tx, ty, tz)) {
       this.carrying = true;
-      this.digSiteVx = this.vx + dx;
-      this.digSiteVy = this.vy + dy;
-      this.digSiteVz = this.vz + dz;
+      this.digSiteVx = tx;
+      this.digSiteVy = ty;
+      this.digSiteVz = tz;
       return true;
     }
     return false;

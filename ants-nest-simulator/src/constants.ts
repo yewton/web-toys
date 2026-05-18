@@ -97,8 +97,11 @@ export const PHEROMONE_PULL_STRENGTH = 2.0;
 export const ANGLE_CONCENTRATION = 5.0;
 
 /** A cavity is considered "wide" — and so unsuitable for further digging —
- *  if at least this fraction of the surrounding voxels are air. Mirrors
- *  the old `isWideSpace` rule that prevented ants from chewing tunnels
- *  into round chambers. With the voxel-discrete dig, removing this check
- *  made every dig zone sprawl into an isotropic funnel. */
-export const WIDE_CAVITY_AIR_RATIO = 0.65;
+ *  if at least this fraction of the 3×3 (current-Z-layer) neighbours of the
+ *  ant are air. Sample is kept tight (2D, 8 cells) so the check only stops
+ *  digging once the immediate surroundings are mostly hollow — i.e. an
+ *  ant standing at the bottom of a deepening trench still has soil below
+ *  it and is allowed to drill further. A spherical sample including the
+ *  open air region above the ant tripped the threshold after just a few
+ *  voxels were dug, capping every entrance at a shallow funnel. */
+export const WIDE_CAVITY_AIR_RATIO = 0.7;
