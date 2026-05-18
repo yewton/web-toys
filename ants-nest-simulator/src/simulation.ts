@@ -12,7 +12,6 @@ import {
   SOIL_DIGGABLE,
   SOIL_PROTECTED,
   canStandAt,
-  digVoxel,
   evaporatePheromone,
   initialAirEndVy,
   initialProtectedEndVy,
@@ -129,39 +128,14 @@ export function initSimulation(): void {
     syncSoilMaskAll(z);
   }
 
-  // Initial entrances: punch holes through the protected band, then pre-dig
-  // a starter shaft + a small lateral chamber into the diggable soil below.
-  //
-  // The single-voxel dig/drop cycle is geometrically slow: an empty ant must
-  // walk all the way to a wall, dig one voxel, walk all the way back to an
-  // open region, drop it. From a flat substrate it takes thousands of cycles
-  // before any tunnel network is large enough to be visually meaningful. The
-  // starter geometry kicks the simulation past that warm-up — ants then
-  // extend it through normal play.
-  const SHAFT_DEPTH_VY = 30;
-  const SHAFT_HALF_W = 2;
-  const CHAMBER_HALF_W = 6;
-  const CHAMBER_HEIGHT_VY = 4;
-  const entranceCount = 5 + Math.floor(Math.random() * 3);
-  const top = initialAirEndVy();
+  // Initial entrances: convert a few protected-band columns to diggable so
+  // ants can break through the surface guidance layer. Nothing is pre-dug
+  // beyond that — the entire tunnel network forms from ant behaviour alone.
+  const entranceCount = 5 + Math.floor(Math.random() * 4);
   for (let i = 0; i < entranceCount; i++) {
     const cvx = Math.floor(GRID_WIDTH * (0.1 + Math.random() * 0.8));
     const ez = Math.floor(Math.random() * DEPTH);
-    // 1) Convert protected → diggable for the shaft mouth.
-    makeDiggable(cvx, ez, SHAFT_HALF_W + 1, 4);
-    // 2) Vertical shaft down.
-    for (let dvy = 0; dvy < SHAFT_DEPTH_VY; dvy++) {
-      for (let dvx = -SHAFT_HALF_W; dvx <= SHAFT_HALF_W; dvx++) {
-        digVoxel(cvx + dvx, top + dvy, ez);
-      }
-    }
-    // 3) Lateral chamber at the bottom of the shaft.
-    const chamberVy = top + SHAFT_DEPTH_VY - 1;
-    for (let dvy = 0; dvy < CHAMBER_HEIGHT_VY; dvy++) {
-      for (let dvx = -CHAMBER_HALF_W; dvx <= CHAMBER_HALF_W; dvx++) {
-        digVoxel(cvx + dvx, chamberVy - dvy, ez);
-      }
-    }
+    makeDiggable(cvx, ez, 3, 4);
   }
 
   state.ants = [];

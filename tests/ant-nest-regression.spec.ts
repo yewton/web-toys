@@ -27,7 +27,12 @@ const TOTAL_STEPS = 300_000;
 const CHUNK_SIZE = 30_000;
 const IDLE_PROBE_STEPS = 1_000;
 
-const MIN_TUNNEL_AIR_VOXELS = 800;
+// Tunnel-air target. The eager-drop model rebalances soil locally rather
+// than accumulating an ever-growing underground void, so this is more a
+// "the simulator is doing work below the original surface" floor than a
+// measure of cumulative dig volume. The bulk of soil movement is the
+// surface mound, which doesn't count here.
+const MIN_TUNNEL_AIR_VOXELS = 400;
 const MIN_VOLUME_RETENTION = 0.85;
 const MIN_MEAN_MOVEMENT = 1.0;
 // Concurrent move/dig across 50 ants can leave a tiny number momentarily

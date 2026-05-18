@@ -41,15 +41,20 @@ export const STEP_SPEED = 0.3;
 
 // ─── Behaviour probabilities ─────────────────────────────────────────────────
 
-/** Per-arrival chance that a carrying ant tries to drop its voxel. Kept
- *  low so carriers travel some distance before depositing, spreading mounds
- *  laterally instead of pillaring at the dig site. */
-export const DROP_PROB = 0.05;
+/** Per-arrival chance that a carrying ant tries to drop its voxel. Drop is
+ *  also gated on minimum travel distance from the dig site (see
+ *  CARRY_MIN_TRAVEL_SQ) so an ant cannot trivially refill the hole. */
+export const DROP_PROB = 0.4;
+
+/** Minimum squared voxel-distance from the dig site before a carrier is
+ *  eligible to drop. Squared = 9 → 3 voxels Euclidean. Above this distance
+ *  the drop is eager; below it the carrier keeps moving. */
+export const CARRY_MIN_TRAVEL_SQ = 9;
 
 /** Base chance per turn that an empty-handed ant decides to dig one of its
- *  cardinal soil neighbours. Tuned so 50 ants over 300k frames visibly
+ *  cardinal soil neighbours. Tuned so 50 ants over ~100k frames visibly
  *  expand the tunnel network without instantly destroying the substrate. */
-export const DIG_PROB_BASE = 0.22;
+export const DIG_PROB_BASE = 0.5;
 
 /** Chance multiplier when the ant has no valid air neighbours (dead-end). */
 export const DIG_PROB_DEADEND = 1.0;

@@ -3,6 +3,7 @@ import {
   DROP_PROB,
   DIG_PROB_BASE,
   DIG_PROB_DEADEND,
+  CARRY_MIN_TRAVEL_SQ,
   PHEROMONE_DEPOSIT_EXPLORE,
   PHEROMONE_DEPOSIT_RETURN,
   UPWARD_BIAS_STRENGTH,
@@ -21,6 +22,7 @@ import {
   depositPheromone,
   getPheromone,
   voxelCentrePx,
+  gradientRgbaAt,
 } from './grid';
 
 /**
@@ -88,6 +90,12 @@ export class Ant {
   angle: number;
   /** True iff the ant is currently carrying exactly 1 voxel of soil. */
   carrying = false;
+  /** Voxel coords where the currently-carried voxel was dug from. Used to
+   *  gate drops on a minimum travel distance, so an ant cannot trivially
+   *  fill the same voxel it just emptied. */
+  digSiteVx = 0;
+  digSiteVy = 0;
+  digSiteVz = 0;
 
   // ─── Move-in-progress state ────────────────────────────────────────────────
   isMoving = false;
@@ -187,31 +195,31 @@ export class Ant {
 
   // ─── Drop ──────────────────────────────────────────────────────────────────
 
-  /** Drop only when the carrier has run out of upward moves — i.e. when it
-   *  has reached the topmost reachable voxel of its current cavity. This is
-   *  the rule that makes mounds form naturally at the highest accessible
-   *  point of any region (surface mound at the top of the world, plug at
-   *  the top of an enclosed chamber) without referring to a global ground
-   *  level. Returns true if a voxel was placed. */
+  /** Place the carried voxel into the first viable adjacent air voxel.
+   *  Drop is gated on the carrier having moved at least sqrt(CARRY_MIN_TRAVEL_SQ)
+   *  voxels from the dig site — without this an ant would trivially fill the
+   *  voxel it just emptied. Returns true if a voxel was placed.
+   *
+   *  Preference order: lateral → above → below. Lateral first because we
+   *  want surface mounds to spread *horizontally* rather than backfilling
+   *  the vertical shaft the carrier just travelled up. Below comes last
+   *  because that's exactly the direction of the shaft. */
   private tryDrop(): boolean {
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        if (canStandAt(this.vx + dx, this.vy - 1, this.vz + dz)) return false;
-      }
-    }
-    // Out of upward moves: place into a randomly-chosen air neighbour,
-    // biased toward "below" so successive deposits build a stack downward
-    // from the ceiling rather than orbiting the same spot.
-    const below: NeighbourOffset[] = [];
-    const lateral: NeighbourOffset[] = [];
+    const dvx = this.vx - this.digSiteVx;
+    const dvy = this.vy - this.digSiteVy;
+    const dvz = this.vz - this.digSiteVz;
+    if (dvx * dvx + dvy * dvy + dvz * dvz < CARRY_MIN_TRAVEL_SQ) return false;
+
     const above: NeighbourOffset[] = [];
+    const lateral: NeighbourOffset[] = [];
+    const below: NeighbourOffset[] = [];
     for (const o of NEIGHBOUR_OFFSETS) {
       if (!isAir(this.vx + o.dx, this.vy + o.dy, this.vz + o.dz)) continue;
-      if (o.dy > 0) below.push(o);
+      if (o.dy < 0) above.push(o);
       else if (o.dy === 0) lateral.push(o);
-      else above.push(o);
+      else below.push(o);
     }
-    for (const bucket of [below, lateral, above]) {
+    for (const bucket of [lateral, above, below]) {
       shuffleInPlace(bucket);
       for (const o of bucket) {
         if (placeVoxel(this.vx + o.dx, this.vy + o.dy, this.vz + o.dz)) {
@@ -246,8 +254,12 @@ export class Ant {
       }
     }
     if (!bestOff) return false;
-    if (digVoxel(this.vx + bestOff[0], this.vy + bestOff[1], this.vz + bestOff[2])) {
+    const dx = bestOff[0], dy = bestOff[1], dz = bestOff[2];
+    if (digVoxel(this.vx + dx, this.vy + dy, this.vz + dz)) {
       this.carrying = true;
+      this.digSiteVx = this.vx + dx;
+      this.digSiteVy = this.vy + dy;
+      this.digSiteVz = this.vz + dz;
       return true;
     }
     return false;
@@ -299,11 +311,15 @@ export class Ant {
     let vertical = 1;
     if (this.carrying && o.dy < 0) vertical = 1 + UPWARD_BIAS_STRENGTH;
     else if (!this.carrying && o.dy > 0) vertical = 1 + DOWNWARD_BIAS_STRENGTH;
-    // Pheromone pull: explorers attracted to return-trail (which leads to a
-    // working dig site), carriers also follow the trail back along the
-    // already-cleared route.
+    // Pheromone influence: carriers are *attracted* to the return trail
+    // (faster trip back along an already-cleared route), but empty
+    // explorers are *repelled* (gentler factor) so they fan out toward
+    // unvisited soil instead of cycling around the surface mound where
+    // pheromone density is highest.
     const ph = getPheromone(tx, ty, tz);
-    const pheromoneFactor = 1 + PHEROMONE_PULL_STRENGTH * ph;
+    const pheromoneFactor = this.carrying
+      ? 1 + PHEROMONE_PULL_STRENGTH * ph
+      : 1 / (1 + PHEROMONE_PULL_STRENGTH * 0.4 * ph);
     return angleScore * vertical * pheromoneFactor;
   }
 
@@ -421,7 +437,9 @@ export class Ant {
     ctx.stroke();
 
     if (this.carrying) {
-      ctx.fillStyle = 'rgba(180, 110, 60, 0.95)';
+      // Match the gradient applied to soil at this y, so the carried voxel
+      // visually matches the colour it will take once placed.
+      ctx.fillStyle = gradientRgbaAt(this.drawY);
       ctx.beginPath();
       ctx.arc(6, 0, 2.5, 0, Math.PI * 2);
       ctx.fill();

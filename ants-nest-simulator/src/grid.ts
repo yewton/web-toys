@@ -163,6 +163,20 @@ export function voxelCentrePx(v: number): number {
   return (v + 0.5) * VOXEL_SIZE;
 }
 
+/** Returns the rgba string that matches the y-gradient applied to soil at
+ *  pixel y. Used to render the voxel a carrying ant is holding so it visually
+ *  matches the gradient colour it will take once placed. */
+export function gradientRgbaAt(y: number): string {
+  const t = Math.max(0, Math.min(1, (y - INITIAL_AIR_TOP_Y) / (HEIGHT - INITIAL_AIR_TOP_Y)));
+  // Linear-interpolate between the two stops used in simulation.ts:
+  //   stop 0: rgba(0, 180, 255, 0.35)
+  //   stop 1: rgba(0, 120, 230, 0.45)
+  const g = Math.round(180 + (120 - 180) * t);
+  const b = Math.round(255 + (230 - 255) * t);
+  const a = (0.35 + (0.45 - 0.35) * t).toFixed(2);
+  return `rgba(0, ${g}, ${b}, ${a})`;
+}
+
 // ─── Mask painting ───────────────────────────────────────────────────────────
 // Each soil voxel paints itself as an opaque circle. Overlapping circles merge
 // into a smooth blob, so the visible substrate stays curved even though the
