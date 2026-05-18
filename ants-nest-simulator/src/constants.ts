@@ -45,11 +45,12 @@ export const STEP_SPEED = 0.3;
 export const DROP_PROB = 0.6;
 
 /** Minimum squared voxel-distance from the dig site before a carrier is
- *  eligible to drop. Set to 4 (Euclidean 2.0) — enough to prevent the
- *  carrier from immediately re-filling adjacent voxels while still
- *  dropping close enough to the dig site that the mound forms near the
- *  original soil line rather than at the world ceiling. */
-export const CARRY_MIN_TRAVEL_SQ = 4;
+ *  eligible to drop. Set to 2 (Euclidean √2 = one lateral or diagonal
+ *  step) — just enough to prevent immediate same-voxel refill. The closer
+ *  we let the carrier drop to the dig site, the more naturally the mound
+ *  settles right at the soil/air boundary instead of being pushed upward
+ *  by extra travel. */
+export const CARRY_MIN_TRAVEL_SQ = 2;
 
 /** Base chance per turn that an empty-handed ant decides to dig one of its
  *  cardinal soil neighbours. Tuned so 50 ants over ~100k frames visibly
@@ -71,20 +72,22 @@ export const PHEROMONE_DEPOSIT_DISTRESS = 0.08;
 
 // ─── Direction weighting ─────────────────────────────────────────────────────
 
-/** Multiplier applied to a candidate move's weight when the carry-upward
- *  bias prefers it (dy < 0). Kept modest so carriers drift upward but
- *  drop early on the way — they don't stampede to the world ceiling. */
-export const UPWARD_BIAS_STRENGTH = 1.5;
+/** Carrier-up bias. Set to 0: carriers no longer have a vertical
+ *  preference, so the carry-distance gate (CARRY_MIN_TRAVEL_SQ) is the
+ *  only thing separating dig from drop. Drops land naturally close to
+ *  the dig site rather than being conveyor-belted up to the ceiling. */
+export const UPWARD_BIAS_STRENGTH = 0;
 
-/** Mirror of UPWARD_BIAS_STRENGTH for empty-handed ants: a downward bias
- *  pulls explorers into the deeper soil so they actually dig new tunnels
- *  instead of indefinitely circling the surface mound. */
-export const DOWNWARD_BIAS_STRENGTH = 1.0;
+/** Empty-ant downward bias — pulls explorers into the deeper soil so
+ *  they actually dig new tunnels instead of circling the surface mound. */
+export const DOWNWARD_BIAS_STRENGTH = 0.8;
 
 /** Multiplier applied per unit of pheromone differential when picking the
- *  next move target. Carrying ants are *attracted* to pheromones; explorers
- *  are *repelled* (negative effective sign). */
-export const PHEROMONE_PULL_STRENGTH = 6.0;
+ *  next move target. Kept modest so the trail influences ants without
+ *  overriding the heading/vertical biases — a strong pull pumps carriers
+ *  back and forth between the dig site and the established surface trail,
+ *  which is the secondary mechanism that drove deposits to the ceiling. */
+export const PHEROMONE_PULL_STRENGTH = 2.0;
 
 /** Sharpness of the "follow current heading" preference. Higher = stricter
  *  forward alignment; 0 = direction is ignored when sampling. */
