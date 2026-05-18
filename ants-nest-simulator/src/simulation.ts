@@ -131,13 +131,15 @@ export function initSimulation(): void {
   }
 
   // Initial entrances: convert a few protected-band columns to diggable so
-  // ants can break through the surface guidance layer. Nothing is pre-dug
-  // beyond that — the entire tunnel network forms from ant behaviour alone.
-  const entranceCount = 5 + Math.floor(Math.random() * 4);
+  // ants can break through the surface guidance layer. Kept few (2–3) so
+  // the colony concentrates around a small number of nest sites — that's
+  // what lets a trunk tunnel emerge through pheromone reinforcement
+  // rather than diffusing into a wide funnel of activity.
+  const entranceCount = 2 + Math.floor(Math.random() * 2);
   for (let i = 0; i < entranceCount; i++) {
-    const cvx = Math.floor(GRID_WIDTH * (0.1 + Math.random() * 0.8));
+    const cvx = Math.floor(GRID_WIDTH * (0.2 + Math.random() * 0.6));
     const ez = Math.floor(Math.random() * DEPTH);
-    makeDiggable(cvx, ez, 3, 4);
+    makeDiggable(cvx, ez, 2, 4);
   }
 
   state.ants = [];

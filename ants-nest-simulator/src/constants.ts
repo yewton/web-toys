@@ -66,9 +66,23 @@ export const DIG_PROB_DEADEND = 1.0;
 
 // ─── Pheromone ───────────────────────────────────────────────────────────────
 
-export const PHEROMONE_DECAY = 0.997;
+// Slower decay so an established trunk persists long enough for other ants
+// to lock onto it (half-life ~460 frames). Was 0.997 — trails faded before
+// the colony could converge on them.
+export const PHEROMONE_DECAY = 0.9985;
 export const PHEROMONE_DEPOSIT_EXPLORE = 0.001;
 export const PHEROMONE_DEPOSIT_RETURN = 0.005;
+
+/** How much the carrier's heading is steered toward the local pheromone
+ *  gradient each idle frame. Carriers chase return-trails strongly because
+ *  the trail is literally "the way back" — that's what creates a stable
+ *  trunk down to the dig face. */
+export const PHEROMONE_HEADING_PULL_CARRY = 0.3;
+
+/** Same for empty explorers, but much gentler — explorers should mostly
+ *  wander so they can stumble onto new directions and seed branches.
+ *  If this is too strong every ant just paces the same trail. */
+export const PHEROMONE_HEADING_PULL_EXPLORE = 0.05;
 /** Per-frame pheromone an XY-stuck ant emits as a "come help me" signal.
  *  Much higher than the regular trail deposits so the local gradient pulls
  *  nearby ants in, who may then dig the wall and free the stuck ant. */

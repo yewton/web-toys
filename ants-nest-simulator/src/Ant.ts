@@ -7,6 +7,8 @@ import {
   PHEROMONE_DEPOSIT_EXPLORE,
   PHEROMONE_DEPOSIT_RETURN,
   PHEROMONE_DEPOSIT_DISTRESS,
+  PHEROMONE_HEADING_PULL_CARRY,
+  PHEROMONE_HEADING_PULL_EXPLORE,
   UPWARD_BIAS_STRENGTH,
   DOWNWARD_BIAS_STRENGTH,
   PHEROMONE_PULL_STRENGTH,
@@ -162,6 +164,13 @@ export class Ant {
   // ─── Idle action selection ─────────────────────────────────────────────────
 
   private idleTurn(): void {
+    // Steer the heading toward the local pheromone gradient before deciding
+    // an action. This is the stigmergic engine — carriers chase return
+    // trails strongly (forming a stable trunk back to the dig face) while
+    // empty explorers nudge gently (so most wander, but enough lock onto
+    // an established trunk that the colony converges on a primary route).
+    this.adjustHeadingByPheromone();
+
     // Drop attempt (carrying only): bias toward placing the voxel below
     // the ant so successive deposits form a mound from the top down.
     if (this.carrying && Math.random() < DROP_PROB) {
@@ -252,6 +261,28 @@ export class Ant {
   }
 
   // ─── Dig ───────────────────────────────────────────────────────────────────
+
+  /** Steer the ant's 2D heading toward the local pheromone gradient.
+   *  Sampling four cardinal in-plane neighbours, the gradient direction
+   *  is `atan2(ph_south - ph_north, ph_east - ph_west)`. Carriers are
+   *  pulled strongly (return-to-base instinct → reinforces the trunk),
+   *  empty explorers gently (mostly wander → seeds new branches). The
+   *  whole stigmergic loop depends on this — without per-frame heading
+   *  bias, individual moves don't accumulate into a sustained trail. */
+  private adjustHeadingByPheromone(): void {
+    const phE = getPheromone(this.vx + 1, this.vy, this.vz);
+    const phW = getPheromone(this.vx - 1, this.vy, this.vz);
+    const phN = getPheromone(this.vx, this.vy - 1, this.vz);
+    const phS = getPheromone(this.vx, this.vy + 1, this.vz);
+    const dx = phE - phW;
+    const dy = phS - phN;
+    if (Math.abs(dx) + Math.abs(dy) < 0.001) return;
+    const target = Math.atan2(dy, dx);
+    const pull = this.carrying
+      ? PHEROMONE_HEADING_PULL_CARRY
+      : PHEROMONE_HEADING_PULL_EXPLORE;
+    this.angle += wrapAngle(target - this.angle) * pull;
+  }
 
   /** Sample the 8 in-plane (current Z) neighbours and return true if most
    *  are air. The ant skips digging in such a spot so the excavated zone
