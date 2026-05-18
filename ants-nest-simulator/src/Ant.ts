@@ -11,6 +11,7 @@ import {
   DOWNWARD_BIAS_STRENGTH,
   PHEROMONE_PULL_STRENGTH,
   ANGLE_CONCENTRATION,
+  WIDE_CAVITY_AIR_RATIO,
 } from './constants';
 import {
   SOIL_DIGGABLE,
@@ -183,8 +184,15 @@ export class Ant {
     }
 
     // Dig in front (only with free hands): peek at the cardinal voxel nearest
-    // the heading; if it is diggable, take a bite instead of moving.
-    if (!this.carrying && Math.random() < DIG_PROB_BASE) {
+    // the heading; if it is diggable, take a bite instead of moving. Skipped
+    // when the ant is in a wide-open cavity — that's the rule that keeps
+    // dig zones from sprawling into round funnels. The ant has to leave the
+    // chamber and find a tighter face before digging more.
+    if (
+      !this.carrying &&
+      !this.isInWideCavity() &&
+      Math.random() < DIG_PROB_BASE
+    ) {
       if (this.tryDigForward()) return;
     }
 
@@ -245,6 +253,25 @@ export class Ant {
   }
 
   // ─── Dig ───────────────────────────────────────────────────────────────────
+
+  /** Sample the local 5×5×3 neighbourhood and return true if it's mostly
+   *  air. The ant skips digging in such a region — that's what keeps the
+   *  excavated zone elongating into a tunnel rather than expanding into
+   *  an isotropic chamber. */
+  private isInWideCavity(): boolean {
+    let air = 0;
+    let total = 0;
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (dx === 0 && dy === 0 && dz === 0) continue;
+          total++;
+          if (isAir(this.vx + dx, this.vy + dy, this.vz + dz)) air++;
+        }
+      }
+    }
+    return air / total >= WIDE_CAVITY_AIR_RATIO;
+  }
 
   /** Dig the most heading-aligned soil voxel out of the ant's 6 cardinal
    *  neighbours. Because an ant lives in an air voxel with a soil neighbour,

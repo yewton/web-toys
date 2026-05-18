@@ -90,5 +90,15 @@ export const DOWNWARD_BIAS_STRENGTH = 0.8;
 export const PHEROMONE_PULL_STRENGTH = 2.0;
 
 /** Sharpness of the "follow current heading" preference. Higher = stricter
- *  forward alignment; 0 = direction is ignored when sampling. */
-export const ANGLE_CONCENTRATION = 2.5;
+ *  forward alignment; 0 = direction is ignored when sampling. Increased
+ *  so empty ants returning to the dig zone follow roughly the same route
+ *  back to the tunnel face, which is what lets the dig site elongate
+ *  into a tunnel instead of sprawling into a funnel. */
+export const ANGLE_CONCENTRATION = 5.0;
+
+/** A cavity is considered "wide" — and so unsuitable for further digging —
+ *  if at least this fraction of the surrounding voxels are air. Mirrors
+ *  the old `isWideSpace` rule that prevented ants from chewing tunnels
+ *  into round chambers. With the voxel-discrete dig, removing this check
+ *  made every dig zone sprawl into an isotropic funnel. */
+export const WIDE_CAVITY_AIR_RATIO = 0.65;
