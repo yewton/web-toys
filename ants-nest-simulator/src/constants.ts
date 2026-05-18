@@ -41,15 +41,15 @@ export const STEP_SPEED = 0.3;
 
 // ─── Behaviour probabilities ─────────────────────────────────────────────────
 
-/** Per-arrival chance that a carrying ant tries to drop its voxel. Drop is
- *  also gated on minimum travel distance from the dig site (see
- *  CARRY_MIN_TRAVEL_SQ) so an ant cannot trivially refill the hole. */
-export const DROP_PROB = 0.4;
+/** Per-arrival chance that a carrying ant tries to drop its voxel. */
+export const DROP_PROB = 0.6;
 
 /** Minimum squared voxel-distance from the dig site before a carrier is
- *  eligible to drop. Squared = 9 → 3 voxels Euclidean. Above this distance
- *  the drop is eager; below it the carrier keeps moving. */
-export const CARRY_MIN_TRAVEL_SQ = 9;
+ *  eligible to drop. Set to 4 (Euclidean 2.0) — enough to prevent the
+ *  carrier from immediately re-filling adjacent voxels while still
+ *  dropping close enough to the dig site that the mound forms near the
+ *  original soil line rather than at the world ceiling. */
+export const CARRY_MIN_TRAVEL_SQ = 4;
 
 /** Base chance per turn that an empty-handed ant decides to dig one of its
  *  cardinal soil neighbours. Tuned so 50 ants over ~100k frames visibly
@@ -68,13 +68,14 @@ export const PHEROMONE_DEPOSIT_RETURN = 0.005;
 // ─── Direction weighting ─────────────────────────────────────────────────────
 
 /** Multiplier applied to a candidate move's weight when the carry-upward
- *  bias prefers it (i.e. the candidate's dy is < 0). */
-export const UPWARD_BIAS_STRENGTH = 2.5;
+ *  bias prefers it (dy < 0). Kept modest so carriers drift upward but
+ *  drop early on the way — they don't stampede to the world ceiling. */
+export const UPWARD_BIAS_STRENGTH = 1.5;
 
 /** Mirror of UPWARD_BIAS_STRENGTH for empty-handed ants: a downward bias
  *  pulls explorers into the deeper soil so they actually dig new tunnels
  *  instead of indefinitely circling the surface mound. */
-export const DOWNWARD_BIAS_STRENGTH = 1.5;
+export const DOWNWARD_BIAS_STRENGTH = 1.0;
 
 /** Multiplier applied per unit of pheromone differential when picking the
  *  next move target. Carrying ants are *attracted* to pheromones; explorers

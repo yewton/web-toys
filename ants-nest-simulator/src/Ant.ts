@@ -198,12 +198,16 @@ export class Ant {
   /** Place the carried voxel into the first viable adjacent air voxel.
    *  Drop is gated on the carrier having moved at least sqrt(CARRY_MIN_TRAVEL_SQ)
    *  voxels from the dig site — without this an ant would trivially fill the
-   *  voxel it just emptied. Returns true if a voxel was placed.
+   *  voxel it just emptied.
    *
    *  Preference order: lateral → above → below. Lateral first because we
    *  want surface mounds to spread *horizontally* rather than backfilling
-   *  the vertical shaft the carrier just travelled up. Below comes last
-   *  because that's exactly the direction of the shaft. */
+   *  the vertical shaft the carrier just travelled up.
+   *
+   *  Each candidate must also have at least 3 cardinal-air neighbours of
+   *  its own — refusing to fill voxels deep inside a tight pocket. Without
+   *  this, drops slowly clog the surface mound until ants can no longer
+   *  move through it, and the simulation grinds to a halt. */
   private tryDrop(): boolean {
     const dvx = this.vx - this.digSiteVx;
     const dvy = this.vy - this.digSiteVy;
@@ -222,7 +226,11 @@ export class Ant {
     for (const bucket of [lateral, above, below]) {
       shuffleInPlace(bucket);
       for (const o of bucket) {
-        if (placeVoxel(this.vx + o.dx, this.vy + o.dy, this.vz + o.dz)) {
+        const tx = this.vx + o.dx;
+        const ty = this.vy + o.dy;
+        const tz = this.vz + o.dz;
+        if (cardinalAirCount(tx, ty, tz) < 3) continue;
+        if (placeVoxel(tx, ty, tz)) {
           this.carrying = false;
           return true;
         }
@@ -311,15 +319,12 @@ export class Ant {
     let vertical = 1;
     if (this.carrying && o.dy < 0) vertical = 1 + UPWARD_BIAS_STRENGTH;
     else if (!this.carrying && o.dy > 0) vertical = 1 + DOWNWARD_BIAS_STRENGTH;
-    // Pheromone influence: carriers are *attracted* to the return trail
-    // (faster trip back along an already-cleared route), but empty
-    // explorers are *repelled* (gentler factor) so they fan out toward
-    // unvisited soil instead of cycling around the surface mound where
-    // pheromone density is highest.
+    // Pheromone influence: both carriers and explorers follow the trail
+    // (carriers reuse cleared routes; explorers head toward where digs
+    // are happening). Repelling explorers from pheromone caused them to
+    // migrate into the world edges in search of pheromone-free voxels.
     const ph = getPheromone(tx, ty, tz);
-    const pheromoneFactor = this.carrying
-      ? 1 + PHEROMONE_PULL_STRENGTH * ph
-      : 1 / (1 + PHEROMONE_PULL_STRENGTH * 0.4 * ph);
+    const pheromoneFactor = 1 + PHEROMONE_PULL_STRENGTH * ph;
     return angleScore * vertical * pheromoneFactor;
   }
 
@@ -454,4 +459,12 @@ function shuffleInPlace<T>(a: T[]): void {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
+}
+
+function cardinalAirCount(vx: number, vy: number, vz: number): number {
+  let n = 0;
+  for (const [dx, dy, dz] of CARDINAL_OFFSETS) {
+    if (isAir(vx + dx, vy + dy, vz + dz)) n++;
+  }
+  return n;
 }
