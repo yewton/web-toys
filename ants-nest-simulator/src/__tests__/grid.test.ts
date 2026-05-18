@@ -266,13 +266,13 @@ describe('evaporatePheromone', () => {
 describe('pixel/voxel helpers', () => {
   it('pixelToVoxel rounds down by VOXEL_SIZE', () => {
     expect(pixelToVoxel(0)).toBe(0);
-    expect(pixelToVoxel(1.9)).toBe(0);
-    expect(pixelToVoxel(2)).toBe(1);
+    expect(pixelToVoxel(3.9)).toBe(0);
+    expect(pixelToVoxel(4)).toBe(1);
   });
 
   it('voxelCentrePx returns the centre of the voxel rectangle', () => {
-    expect(voxelCentrePx(0)).toBe(1);
-    expect(voxelCentrePx(10)).toBe(21);
+    expect(voxelCentrePx(0)).toBe(2);
+    expect(voxelCentrePx(10)).toBe(42);
   });
 });
 

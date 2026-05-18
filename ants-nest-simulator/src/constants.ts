@@ -15,8 +15,10 @@ export const WIDTH = 400;
 export const HEIGHT = 400;
 export const DEPTH = 3;
 
-/** Voxel size in pixels. Fixed: no UI selector. */
-export const VOXEL_SIZE = 2;
+/** Voxel size in pixels. Fixed: no UI selector. 4 px keeps single-voxel
+ *  tunnels visible (4 px wide) in the 400 px canvas — the previous 2 px
+ *  size made the discrete digging behaviour barely readable. */
+export const VOXEL_SIZE = 4;
 export const GRID_WIDTH = WIDTH / VOXEL_SIZE;
 export const GRID_HEIGHT = HEIGHT / VOXEL_SIZE;
 
@@ -28,8 +30,10 @@ export const GRID_HEIGHT = HEIGHT / VOXEL_SIZE;
 /** Voxels strictly above this Y (pixels) start as air. */
 export const INITIAL_AIR_TOP_Y = 40;
 
-/** Initial protected-layer thickness in pixels (immediately below the air zone). */
-export const PROTECTED_DEPTH = 6;
+/** Initial protected-layer thickness in pixels (immediately below the air
+ *  zone). 12 px ≈ 3 voxels at VOXEL_SIZE=4, matching the previous voxel
+ *  count of protected substrate. */
+export const PROTECTED_DEPTH = 12;
 
 // ─── Movement ────────────────────────────────────────────────────────────────
 

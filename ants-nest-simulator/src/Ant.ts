@@ -286,7 +286,7 @@ export class Ant {
     let bestDot = -Infinity;
     let bestOff: readonly [number, number, number] | null = null;
     for (const off of CARDINAL_OFFSETS) {
-      const [dx, dy, dz] = off;
+      const [dx, dy] = off;
       const dot = dx === 0 && dy === 0 ? 0 : dx * ax + dy * ay;
       if (dot > bestDot) {
         bestDot = dot;

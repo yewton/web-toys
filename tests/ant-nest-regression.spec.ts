@@ -118,9 +118,9 @@ test('regression metrics over 300k steps', async ({ page }) => {
         const gridHeight = grids[0].length;
         const gridWidth = grids[0][0].length;
 
-        // INITIAL_AIR_TOP_Y / VOXEL_SIZE = 40 / 2 = 20 — used only as the
+        // INITIAL_AIR_TOP_Y / VOXEL_SIZE = 40 / 4 = 10 — used only as the
         // y-row threshold for the "tunnel air inside the original soil" count.
-        const initialAirEndVy = 20;
+        const initialAirEndVy = 10;
         let totalSoil = 0;
         let tunnelAir = 0;
         for (let z = 0; z < depth; z++) {
