@@ -27,12 +27,12 @@ const TOTAL_STEPS = 300_000;
 const CHUNK_SIZE = 30_000;
 const IDLE_PROBE_STEPS = 1_000;
 
-// Tunnel-air target. The eager-drop model rebalances soil locally rather
-// than accumulating an ever-growing underground void, so this is more a
-// "the simulator is doing work below the original surface" floor than a
-// measure of cumulative dig volume. The bulk of soil movement is the
-// surface mound, which doesn't count here.
-const MIN_TUNNEL_AIR_VOXELS = 400;
+// Tunnel-air target. With VOXEL_SIZE=4 (grid 100×100) and trunk-style
+// digging (single-voxel-wide shafts), absolute counts are an order of
+// magnitude smaller than the old isotropic-funnel runs at VOXEL_SIZE=2.
+// Threshold is a "the simulator dug *something* below the original
+// surface" sanity floor, not a measure of cumulative dig volume.
+const MIN_TUNNEL_AIR_VOXELS = 40;
 const MIN_VOLUME_RETENTION = 0.85;
 const MIN_MEAN_MOVEMENT = 1.0;
 // Concurrent move/dig across 50 ants can leave a tiny number momentarily

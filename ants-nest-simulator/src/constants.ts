@@ -73,16 +73,25 @@ export const PHEROMONE_DECAY = 0.9985;
 export const PHEROMONE_DEPOSIT_EXPLORE = 0.001;
 export const PHEROMONE_DEPOSIT_RETURN = 0.005;
 
-/** How much the carrier's heading is steered toward the local pheromone
- *  gradient each idle frame. Carriers chase return-trails strongly because
- *  the trail is literally "the way back" — that's what creates a stable
- *  trunk down to the dig face. */
-export const PHEROMONE_HEADING_PULL_CARRY = 0.3;
-
-/** Same for empty explorers, but much gentler — explorers should mostly
- *  wander so they can stumble onto new directions and seed branches.
- *  If this is too strong every ant just paces the same trail. */
-export const PHEROMONE_HEADING_PULL_EXPLORE = 0.05;
+/** Per-frame heading rotation toward the local pheromone gradient,
+ *  by ant state. Sign convention: positive = attracted toward the trail,
+ *  negative = repelled.
+ *
+ *  This is the classical ant-nest stigmergic asymmetry:
+ *
+ *  - Empty explorers (PULL_EXPLORE > 0) chase trails strongly. Trails
+ *    point at active dig sites, so explorers converge there and dig at
+ *    the same spot — that's what forms the trunk.
+ *  - Carriers (PULL_CARRY < 0) are mildly repelled from trails. With
+ *    their hands full they head to *unexplored* surface area to drop,
+ *    spreading the mound laterally instead of stacking on the trunk.
+ *
+ *  Previously had these reversed (carriers attracted, explorers gently
+ *  repelled) which produced a wide bowl rather than a trunk — carriers
+ *  retracing the trail jammed the dig area, and explorers wandering
+ *  randomly never converged on a single dig face. */
+export const PHEROMONE_HEADING_PULL_EXPLORE = 0.1;
+export const PHEROMONE_HEADING_PULL_CARRY = -0.05;
 /** Per-frame pheromone an XY-stuck ant emits as a "come help me" signal.
  *  Much higher than the regular trail deposits so the local gradient pulls
  *  nearby ants in, who may then dig the wall and free the stuck ant. */
@@ -97,8 +106,11 @@ export const PHEROMONE_DEPOSIT_DISTRESS = 0.08;
 export const UPWARD_BIAS_STRENGTH = 0;
 
 /** Empty-ant downward bias — pulls explorers into the deeper soil so
- *  they actually dig new tunnels instead of circling the surface mound. */
-export const DOWNWARD_BIAS_STRENGTH = 0.8;
+ *  they actually dig new tunnels instead of circling the surface mound.
+ *  Strong because the dig face itself has *low* pheromone (it has only
+ *  been visited once, by the carrier who created it) so the gradient
+ *  doesn't pull explorers all the way down — gravity bias does. */
+export const DOWNWARD_BIAS_STRENGTH = 2.0;
 
 /** Multiplier applied per unit of pheromone differential when picking the
  *  next move target. Kept modest so the trail influences ants without

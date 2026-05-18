@@ -130,16 +130,17 @@ export function initSimulation(): void {
     syncSoilMaskAll(z);
   }
 
-  // Initial entrances: convert a few protected-band columns to diggable so
-  // ants can break through the surface guidance layer. Kept few (2–3) so
-  // the colony concentrates around a small number of nest sites — that's
-  // what lets a trunk tunnel emerge through pheromone reinforcement
-  // rather than diffusing into a wide funnel of activity.
+  // Initial entrances: each entrance is a **single-column** diggable
+  // pinhole through the protected band. The narrow geometry forces the
+  // colony to funnel through one voxel at a time, which is the only way
+  // a 1-voxel-wide trunk can actually emerge — wider entrance carvings
+  // let many ants dig in parallel and the aggregate footprint is always
+  // a wide bowl regardless of any per-ant heading discipline.
   const entranceCount = 2 + Math.floor(Math.random() * 2);
   for (let i = 0; i < entranceCount; i++) {
     const cvx = Math.floor(GRID_WIDTH * (0.2 + Math.random() * 0.6));
     const ez = Math.floor(Math.random() * DEPTH);
-    makeDiggable(cvx, ez, 2, 4);
+    makeDiggable(cvx, ez, 0, 4);
   }
 
   state.ants = [];
