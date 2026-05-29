@@ -148,8 +148,22 @@ export function formatNumber(value: BigNum, type: FormatType, kanjiUnits = COMPO
     const u = joUnits.find((j) => e >= j.e);
     if (u) {
       const coeff = new BigNum(m, e - u.e);
-      const coeffStr =
-        coeff.e < KANJI_MAX_E ? compoundKanji(coeff, kanjiUnits) : compoundAboveMuryo(coeff, kanjiUnits);
+      // 係数の整形ルール:
+      //  - coeff < 10^72 → 万進法の複合漢数字（"1京" 等）
+      //  - 10^72 ≤ coeff < u.e → さらに小さい上数法命数が挟まる可能性があるので
+      //    再帰的に formatNumber へ。例: 最勝の係数に "矜羯羅阿伽羅" が連なって
+      //    「1京矜羯羅阿伽羅最勝」のような表記になり、無量大数の積み上げを最小化できる。
+      //    `coeff.e < u.e` の条件で必ず指数が下がるので再帰は有限。
+      //  - coeff ≥ u.e → 上数法では下のレベルに落とせない（極限級）。
+      //    無量大数積み上げ → 不可ならフォールバック。
+      let coeffStr: string | null;
+      if (coeff.e < KANJI_MAX_E) {
+        coeffStr = compoundKanji(coeff, kanjiUnits);
+      } else if (coeff.e < u.e) {
+        coeffStr = formatNumber(coeff, 'kanji', kanjiUnits);
+      } else {
+        coeffStr = compoundAboveMuryo(coeff, kanjiUnits);
+      }
       if (coeffStr !== null) return coeffStr + u.name;
     }
     // 命数の無いレンジ（10^72〜10^111）は無量大数を積み上げ（例: "1万無量大数"）。

@@ -38,6 +38,18 @@ describe('formatNumber', () => {
     expect(formatNumber(new BigNum(1, 100), 'kanji')).toBe('1溝無量大数');
   });
 
+  it('nests 上数法 命数 recursively inside the coefficient (suppresses 無量大数 chain)', () => {
+    // 上数法は前の命数の 2 乗で増えるので、係数の中に「より小さい命数」が入り得る。
+    // 係数を再帰整形することで「無量大数を何個も積み上げる」表記を抑える。
+    // 例: 10^800 = 10^352 × 最勝(10^448)。10^352 = 10^128 × 阿伽羅(10^224)。10^128 = 1京 × 矜羯羅。
+    expect(formatNumber(new BigNum(1, 800), 'kanji')).toBe('1京矜羯羅阿伽羅最勝');
+    // 10^600 = 10^152 × 最勝。10^152 = 10^40 × 矜羯羅 = 1正 × 矜羯羅。
+    expect(formatNumber(new BigNum(1, 600), 'kanji')).toBe('1正矜羯羅最勝');
+    // 30分コースHP 10^2040 = 10^1144 × 阿婆羅(10^1792)? いや、阿婆羅は 1792、最勝は 448、阿伽羅は 224 …
+    // joUnits の中で 10^2040 以下の最大は 阿婆羅(1792)。係数=10^248。次の最大は 阿伽羅(224)。係数'=10^24=1𥝱。
+    expect(formatNumber(new BigNum(1, 2040), 'kanji')).toBe('1𥝱阿伽羅阿婆羅');
+  });
+
   it('falls back to a power tower when too large for 命数 / stacking', () => {
     // グラハム数級 = 10^(1.7×10^308) → 二段の塔
     expect(formatNumber(new BigNum(1, 1.7e308), 'kanji')).toBe('10^10^308');
