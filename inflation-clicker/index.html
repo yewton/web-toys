@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>インフレクリッカー</title>
+  <meta name="description" content="桁を上げて、天文学的な敵HPを削り切るクリッカー">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="インフレクリッカー">
+  <link rel="manifest" href="/inflation-clicker/manifest.json">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased select-none">
+
+  <!-- ===== メニュー ===== -->
+  <div id="menuScreen" class="h-dvh overflow-y-auto flex flex-col items-center px-6 py-10">
+    <div class="my-auto w-full max-w-sm">
+      <h1 class="text-4xl font-bold tracking-tight text-zinc-50">インフレクリッカー</h1>
+      <p class="mt-2 text-zinc-500">桁を上げて、削り切る。</p>
+
+      <div id="difficultyList" class="mt-10 flex flex-col gap-3"></div>
+
+      <button id="continueBtn"
+              class="hidden mt-3 w-full px-5 py-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10
+                     text-emerald-300 font-medium hover:bg-emerald-400/20 transition-colors">
+        つづきから
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== ゲーム本体 ===== -->
+  <div id="gameScreen" class="hidden h-dvh flex flex-col overflow-hidden">
+
+    <!-- ヘッダー：難易度・時間・敵HP残り・ゲージ -->
+    <header class="flex-none px-4 pt-3 pb-4 border-b border-white/5">
+      <div class="w-full max-w-3xl mx-auto">
+        <div class="flex items-center justify-between text-sm text-zinc-500">
+          <span id="diffName" class="font-medium text-zinc-400"></span>
+          <div class="flex items-center gap-3 tabular-nums">
+            <span id="saveStatus" class="text-emerald-400/80 text-xs"></span>
+            <span id="timerVal">00:00</span>
+            <button id="resetBtn" class="text-zinc-500 hover:text-zinc-200 transition-colors" title="タイトルへ">✕</button>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <canvas id="gaugeCanvas"></canvas>
+        </div>
+      </div>
+    </header>
+
+    <!-- メイン：敵・アイテム -->
+    <main id="arena" class="flex-1 min-h-0 relative flex items-center justify-center overflow-hidden cursor-pointer">
+      <div id="enemy" class="enemy-figure text-[100px] sm:text-[150px] md:text-[190px] leading-none">👿</div>
+
+      <div id="item" class="hidden absolute z-40 cursor-pointer p-4 hover:scale-110 transition-transform">
+        <div class="relative flex items-center justify-center">
+          <div class="absolute w-20 h-20 rounded-full bg-emerald-300/30 animate-ping"></div>
+          <span class="text-6xl z-10 drop-shadow-[0_0_14px_rgba(52,211,153,0.8)]">⚔️</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- フッター：攻撃力 -->
+    <footer class="flex-none safe-bottom px-4 pt-4 border-t border-white/5">
+      <div id="atkPanel" class="w-full max-w-3xl mx-auto rounded-lg px-4 py-3 bg-white/[0.03] border border-white/5">
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="text-[11px] uppercase tracking-widest text-emerald-500/80 shrink-0">Attack</span>
+          <span id="atkSci" class="text-xs text-zinc-600 tabular-nums truncate"></span>
+        </div>
+        <div id="atkVal" class="text-xl sm:text-2xl md:text-3xl font-semibold text-emerald-300 tabular-nums leading-tight truncate"></div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ===== 撃破結果（戻るボタンは画面下端＝連打ゾーンから離す） ===== -->
+  <div id="clearedOverlay"
+       class="hidden fixed inset-0 z-40 flex flex-col items-center px-6 bg-zinc-950/85 backdrop-blur-sm">
+    <div class="my-auto text-center">
+      <div class="text-sm uppercase tracking-[0.3em] text-emerald-500/80">Defeated</div>
+      <h2 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50">撃破</h2>
+      <p class="mt-3 text-zinc-400 tabular-nums">タイム <span id="clearedTime">00:00</span></p>
+    </div>
+    <button id="backBtn"
+            class="mb-10 safe-bottom w-full max-w-sm px-5 py-4 rounded-lg border border-white/10 bg-white/[0.05]
+                   text-zinc-100 font-medium hover:bg-white/[0.1] transition-all">
+      タイトルへ
+    </button>
+  </div>
+
+  <!-- 撃破時の画面フラッシュ -->
+  <div id="killFlash" class="pointer-events-none fixed inset-0"></div>
+
+  <canvas id="fxCanvas"></canvas>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

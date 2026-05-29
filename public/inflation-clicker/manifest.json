@@ -1,0 +1,17 @@
+{
+  "name": "インフレクリッカー",
+  "short_name": "インフレクリッカー",
+  "description": "桁を上げて、天文学的な敵HPを削り切るクリッカー",
+  "start_url": ".",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0a0a0b",
+  "background_color": "#0a0a0b",
+  "icons": [
+    { "src": "../icon-96.png",  "sizes": "96x96",   "type": "image/png" },
+    { "src": "../icon-144.png", "sizes": "144x144",  "type": "image/png" },
+    { "src": "../icon-192.png", "sizes": "192x192",  "type": "image/png" },
+    { "src": "../icon-512.png", "sizes": "512x512",  "type": "image/png", "purpose": "any maskable" }
+  ]
+}

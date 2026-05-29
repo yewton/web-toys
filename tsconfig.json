@@ -13,5 +13,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "solitaire-cascade/src", "ants-nest-simulator/src"]
+  "include": ["src", "solitaire-cascade/src", "ants-nest-simulator/src", "inflation-clicker/src"]
 }

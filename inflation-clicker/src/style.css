@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0a0a0b;
+  -webkit-tap-highlight-color: transparent;
+  /* 連打をダブルタップズームと誤認させない（メニューのスクロールは許可） */
+  touch-action: manipulation;
+}
+
+/* 連打ゾーン（敵・アイテム）はジェスチャーを一切受け付けない＝ズーム暴発を防ぐ */
+#arena {
+  touch-action: none;
+}
+
+/* ダメージ数値を描くフルスクリーンキャンバス（最前面・クリック透過） */
+#fxCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* 体力ゲージのキャンバス（CSS でサイズを決め、JS が backing store を合わせる） */
+#gaugeCanvas {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+
+/* セーフエリア（ホームインジケータ等）を避けてフッターを必ず見せる */
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* --- 敵と硬化演出 --- */
+/* 注意: text-shadow / transform は --harden が変わったとき（クリック時）だけ更新する。
+   連続アニメは置かない（モバイルでの再描画コストを避けるため）。 */
+.enemy-figure {
+  --harden: 0;
+  --hit: 0;
+  position: relative;
+  cursor: pointer;
+  transition: text-shadow 0.2s ease-out;
+  /* ヒットのリコイル（縮み＋傾き）は硬いほど弱くなる＝硬化を体感させる */
+  transform: scale(calc(1 + var(--harden) * 0.1 - var(--hit) * 0.1 * (1 - var(--harden) * 0.8)))
+    rotate(calc(var(--hit) * -3deg * (1 - var(--harden) * 0.8)));
+  /* 削れるほど水色のシェル光が強まる（静的） */
+  text-shadow:
+    0 0 calc(6px + var(--harden) * 16px) rgba(125, 211, 252, calc(var(--harden) * 0.8)),
+    0 0 calc(2px + var(--harden) * 6px) rgba(255, 255, 255, calc(var(--harden) * 0.5));
+}
+/* 結晶シェル：硬化度に応じて二重のエネルギーリングが濃く現れる（文字に頼らず硬さを示す） */
+.enemy-figure::before,
+.enemy-figure::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: rgba(125, 243, 255, 0.9);
+  pointer-events: none;
+}
+.enemy-figure::before {
+  width: 1em;
+  height: 1em;
+  border-width: 3px;
+  transform: translate(-50%, -50%);
+  opacity: var(--harden);
+  box-shadow:
+    0 0 14px rgba(125, 243, 255, 0.8),
+    inset 0 0 14px rgba(125, 243, 255, 0.45);
+}
+.enemy-figure::after {
+  width: 1.25em;
+  height: 1.25em;
+  border-width: 2px;
+  border-color: rgba(180, 250, 255, 0.7);
+  transform: translate(-50%, -50%);
+  opacity: calc(var(--harden) * var(--harden) * 0.85); /* 終盤ほど一気に濃く */
+  box-shadow: 0 0 10px rgba(125, 243, 255, 0.5);
+}
+/* 撃破：ふくらんで光って弾け飛ぶ */
+.enemy-figure.defeated {
+  animation: defeatBurst 0.6s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes defeatBurst {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  22% { transform: scale(1.55); opacity: 1; filter: brightness(2.4) saturate(1.5); }
+  100% { transform: scale(0.25) rotate(12deg); opacity: 0; filter: brightness(1); }
+}
+
+/* 撃破時の画面フラッシュ（一瞬だけ白む） */
+#killFlash {
+  background: #ffffff;
+  opacity: 0;
+  z-index: 55;
+}
+#killFlash.show {
+  animation: killFlash 0.4s ease-out;
+}
+@keyframes killFlash {
+  0% { opacity: 0; }
+  12% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+
+/* 戻るボタンの「武装解除」：撃破画面が出た直後の数百 msは押せない（連打の誤タップ防止） */
+#backBtn.arming {
+  pointer-events: none;
+  opacity: 0.35;
+  transform: translateY(6px);
+}
+
+/* 攻撃力ランプ中：攻撃パネルが静的に発光（連続アニメは置かず再描画コストを抑える） */
+#atkPanel {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+#atkPanel.powering {
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.35);
+  border-color: rgba(52, 211, 153, 0.5);
+}
+
+/* アイテム取得時のバフ演出：攻撃パネルが一瞬強くエメラルド発光（文字は出さない） */
+#atkPanel.buffed {
+  animation: buffFlash 0.6s ease-out;
+}
+@keyframes buffFlash {
+  0% { box-shadow: 0 0 6px rgba(52, 211, 153, 0.2); border-color: rgba(52, 211, 153, 0.4); }
+  25% {
+    box-shadow: 0 0 30px rgba(52, 211, 153, 0.9);
+    border-color: rgba(110, 231, 183, 1);
+    transform: scale(1.015);
+  }
+  100% { box-shadow: 0 0 14px rgba(52, 211, 153, 0.35); border-color: rgba(52, 211, 153, 0.5); }
+}
+
+/* アイテム取得時の軽い画面シェイク */
+.shake {
+  animation: shake 0.3s ease-in-out;
+}
+@keyframes shake {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.01); }
+}

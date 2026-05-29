@@ -3,6 +3,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE_PATH ?? (mode === 'production' ? '/web-toys/' : '/'),
+  server: {
+    host: process.env.VITE_DEV_HOST,
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(','),
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
@@ -22,6 +26,7 @@ export default defineConfig(({ mode }) => ({
         main: 'index.html',
         solitaire: 'solitaire-cascade/index.html',
         ants: 'ants-nest-simulator/index.html',
+        clicker: 'inflation-clicker/index.html',
       },
     },
   },
@@ -36,6 +41,8 @@ export default defineConfig(({ mode }) => ({
       exclude: [
         // DOM-only module: requires document.createElement('canvas'), untestable in node env
         '**/textures.ts',
+        // Canvas-only renderer for the HP gauge; its pure model lives in hpGauge.ts (tested)
+        '**/gaugeView.ts',
       ],
     },
   },

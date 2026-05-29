@@ -4,7 +4,7 @@ node_modules/
 .pnp.js
 
 # Testing
-/test-results/
+test-results/
 /coverage/
 /tests/screenshots/
 /tests/results/
@@ -38,6 +38,7 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+.envrc
 
 # Logs
 npm-debug.log*
@@ -60,3 +61,4 @@ pids
 !.claude/hooks/
 .claude/settings.local.json
 memory/
+!.claude/worktrees/
