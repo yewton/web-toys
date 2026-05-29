@@ -1,3 +1,4 @@
+import { BigNum } from './bignum';
 import { difficultyConfigs, difficultyOrder, type Difficulty } from './config';
 import { formatNumber, formatTime } from './format';
 import { state } from './state';
@@ -137,13 +138,58 @@ export function renderScreen(): void {
     killFlash.classList.remove('show');
   }
   if (state.screen === 'cleared') {
-    $('clearedTime').textContent = formatTime(state.elapsedTime);
+    fillResult();
     setHardening(0);
     // 連打の流れで即タイトルに戻らないよう、戻るボタンを少し遅れて有効化する
     backBtn.classList.add('arming');
     window.clearTimeout(armTimer);
     armTimer = window.setTimeout(() => backBtn.classList.remove('arming'), 700);
   }
+}
+
+/** log10 値（damageE 等）から BigNum を作る。0 以下や非有限は 0 として返す。 */
+function bigNumFromLog10(log10: number): BigNum {
+  if (!Number.isFinite(log10) || log10 <= 0) return new BigNum(0, 0);
+  const e = Math.floor(log10);
+  return new BigNum(Math.pow(10, log10 - e), e);
+}
+
+/** 撃破画面の各統計値をセットする。 */
+function fillResult(): void {
+  const cfg = difficultyConfigs[state.difficulty];
+  const courseEl = document.getElementById('clearedCourse');
+  if (courseEl) courseEl.textContent = cfg.name;
+
+  $('clearedTime').textContent = formatTime(state.elapsedTime);
+
+  // 総ダメージ＝累積ダメージ。撃破時点では damageE >= maxHp.e。
+  const total = bigNumFromLog10(state.damageE);
+  const damageEl = $('clearedDamage');
+  damageEl.textContent = formatNumber(total, 'kanji');
+  $('clearedDamageSci').textContent = formatNumber(total, 'sci');
+  fitText(damageEl);
+
+  $('clearedClicks').textContent = state.totalClicks.toLocaleString('ja-JP');
+
+  const seconds = Math.max(1, state.elapsedTime);
+  const cps = state.totalClicks / seconds;
+  $('clearedCps').textContent = cps.toFixed(1);
+
+  $('clearedItems').textContent = `${state.itemsCollected} / ${cfg.totalItems}`;
+
+  const atkEl = $('clearedAtk');
+  atkEl.textContent = formatNumber(state.atk, 'kanji');
+  fitText(atkEl);
+
+  const maxHitEl = $('clearedMaxHit');
+  maxHitEl.textContent = state.maxHit.isZero() ? '0' : formatNumber(state.maxHit, 'kanji');
+  fitText(maxHitEl);
+
+  // 平均 DPS = totalDamage / elapsedTime。log10 空間で引いて BigNum 化。
+  const dps = bigNumFromLog10(state.damageE - Math.log10(seconds));
+  const dpsEl = $('clearedDps');
+  dpsEl.textContent = formatNumber(dps, 'kanji');
+  fitText(dpsEl);
 }
 
 /** 撃破演出：アイテム/バッジを消し、敵を弾けさせ、画面を一瞬フラッシュ。 */

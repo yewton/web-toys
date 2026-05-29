@@ -29,6 +29,10 @@ export interface GameState {
   /** 直近のアイテムからのクリック数。CLICK_BUDGET_PER_ITEM 到達で次のアイテムを出す。 */
   clicksSinceItem: number;
   elapsedTime: number;
+  /** これまでの累計クリック数（リザルト表示用）。 */
+  totalClicks: number;
+  /** 単発で出した最大ダメージ（リザルト表示用）。`m × 10^e`。 */
+  maxHit: BigNum;
   /** Continue 可能なセーブが存在するか（メニュー表示判定用） */
   hasSave: boolean;
 }
@@ -45,6 +49,8 @@ export const state: GameState = {
   itemPos: { top: '50%', left: '50%' },
   clicksSinceItem: 0,
   elapsedTime: 0,
+  totalClicks: 0,
+  maxHit: new BigNum(0, 0),
   hasSave: false,
 };
 
@@ -61,6 +67,8 @@ export function resetForDifficulty(diff: Difficulty): void {
   state.itemPos = { top: '50%', left: '50%' };
   state.clicksSinceItem = 0;
   state.elapsedTime = 0;
+  state.totalClicks = 0;
+  state.maxHit = new BigNum(0, 0);
 }
 
 const SAVE_KEY = 'inflationClicker.save';
@@ -81,6 +89,8 @@ interface SaveData {
   itemPos: { top: string; left: string };
   clicksSinceItem: number;
   elapsedTime: number;
+  totalClicks: number;
+  maxHit: SerializedBig;
 }
 
 const ser = (n: BigNum): SerializedBig => ({ m: n.m, e: n.e });
@@ -102,6 +112,8 @@ export function save(): void {
       itemPos: state.itemPos,
       clicksSinceItem: state.clicksSinceItem,
       elapsedTime: state.elapsedTime,
+      totalClicks: state.totalClicks,
+      maxHit: ser(state.maxHit),
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     state.hasSave = true;
@@ -144,6 +156,8 @@ export function loadSave(): boolean {
     state.itemPos = d.itemPos ?? { top: '50%', left: '50%' };
     state.clicksSinceItem = d.clicksSinceItem ?? 0;
     state.elapsedTime = d.elapsedTime ?? 0;
+    state.totalClicks = d.totalClicks ?? 0;
+    state.maxHit = d.maxHit ? deser(d.maxHit) : new BigNum(0, 0);
     return true;
   } catch {
     return false;

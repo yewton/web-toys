@@ -356,6 +356,8 @@ function handleAttack(x: number, y: number): void {
 
   // ダメージ数値の表示（先頭の数字は 1〜9 でばらつく）
   const dmg = new BigNum(m, state.atk.e);
+  if (dmg.cmp(state.maxHit) > 0) state.maxHit = dmg;
+  state.totalClicks++;
   spawnDamage(x, y, dmg);
   spawnHitSpark(x, y);
   hitImpulse = 1;
