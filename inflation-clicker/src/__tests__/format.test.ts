@@ -50,11 +50,16 @@ describe('formatNumber', () => {
     expect(formatNumber(new BigNum(1, 2040), 'kanji')).toBe('1𥝱阿伽羅阿婆羅');
   });
 
-  it('falls back to a power tower when too large for 命数 / stacking', () => {
-    // グラハム数級 = 10^(1.7×10^308) → 二段の塔
+  it('falls back to a power tower only when coeff exceeds the joUnit (グラハム数 class)', () => {
+    // グラハム数級 = 10^(1.7×10^308): coeff.e >> u.e なので冪乗の塔へ
     expect(formatNumber(new BigNum(1, 1.7e308), 'kanji')).toBe('10^10^308');
-    // 指数 1e20 も命数・積み上げの範囲外 → 漢数字指数の塔 10^1垓
-    expect(formatNumber(new BigNum(1, 1e20), 'kanji')).toBe('10^1垓');
+  });
+
+  it('uses k乗無量大数 notation at depth=3 for joUnit-range numbers', () => {
+    // e=1e20 は joUnit 範囲内（< 3.7e37）→ depth=3 で k乗無量大数 形式の命数複合表記
+    expect(formatNumber(new BigNum(1, 1e20), 'kanji')).toBe('11京6720兆3085億乗無量大数鉢羅麼怛羅諦羅偈羅');
+    // e=5e30 も joUnit 範囲内
+    expect(formatNumber(new BigNum(1, 5e30), 'kanji')).toBe('163𥝱1319垓3329京乗無量大数駄麼羅無我鉢頭摩');
   });
 
   it('uses english units', () => {
@@ -75,8 +80,6 @@ describe('formatNumber', () => {
 
   it('compacts huge exponents so the width does not explode (sci)', () => {
     expect(formatNumber(new BigNum(1, 1e18), 'sci')).toBe('1 × 10^1.00×10^18');
-    // kanji は指数を漢数字化：5×10^30 → 指数 5e30 = 500穣 → 10^500穣
-    expect(formatNumber(new BigNum(1, 5e30), 'kanji')).toBe('10^500穣');
   });
 });
 

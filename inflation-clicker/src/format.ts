@@ -103,8 +103,8 @@ function kanjiOfNumber(x: number): string {
 
 // 無量大数 = 10^68。これを超単位として「無量大数^k」を積み上げ、10^68 超を複合漢数字で表す。
 const MURYO_E = 68;
-// 無量大数 を積み上げる上限。これより k が大きい（＝桁が大きすぎて読めない／重い）ときは
-// 冪乗の塔表記にフォールバックする。
+// 無量大数を連ねる上限。k ≤ 16: 文字列を繰り返す。k > 16 かつ allowCount=true: 「k乗無量大数」形式。
+// k > 16 かつ allowCount=false: null を返し呼び出し側で冪乗の塔へフォールバック。
 const MURYO_MAX_STACK = 16;
 
 // 華厳経「上数法」命数の定義データ（n 昇順）。e = 7 × 2^n。n=4（矜羯羅）〜 n=122（不可説不可説転）。
@@ -239,20 +239,18 @@ export const joUnits = joUnitData
 /**
  * 無量大数(10^68)を超える数を「先頭ブロックの複合漢数字 ＋ 無量大数 ×k」で表す。
  * 例: 10^112 → "1載無量大数"（載=10^44, ×無量大数=10^68 で 10^112）、10^136 → "1無量大数無量大数"。
- * k = floor(e/68) が大きすぎる場合は null（呼び出し側で冪乗の塔へ）。
+ * k ≤ MURYO_MAX_STACK: 無量大数を k 回繰り返す。
+ * k > MURYO_MAX_STACK: allowCount=true なら「k乗無量大数」形式、false なら null（呼び出し側で冪乗の塔へ）。
  */
-function compoundAboveMuryo(value: BigNum, maxUnits: number): string | null {
+function compoundAboveMuryo(value: BigNum, maxUnits: number, allowCount = false): string | null {
   const k = Math.floor(value.e / MURYO_E);
-  if (k < 1 || k > MURYO_MAX_STACK) return null;
+  if (k < 1) return null;
+  // k が大きすぎて無量大数を連ねられない場合は先頭計算を省略して早期リターン。
+  if (k > MURYO_MAX_STACK && !allowCount) return null;
   // 先頭ブロック = m × 10^(e − 68k)（< 10^68 なので万進法の複合漢数字で表せる）。
-  // 仮数を [1,10) に正規化してから渡す。
-  let headM = value.m;
-  let headE = value.e - MURYO_E * k;
-  while (headM >= 10) {
-    headM /= 10;
-    headE += 1;
-  }
-  const head = compoundKanji(new BigNum(headM, headE), maxUnits);
+  // BigNum.m ∈ [1, 10) が保証されているので正規化ループは不要。
+  const head = compoundKanji(new BigNum(value.m, value.e - MURYO_E * k), maxUnits);
+  if (k > MURYO_MAX_STACK) return head + kanjiOfNumber(k) + '乗無量大数';
   return head + '無量大数'.repeat(k);
 }
 
@@ -288,7 +286,8 @@ export function formatNumber(value: BigNum, type: FormatType, kanjiUnits = COMPO
     }
     // 命数の無いレンジ（10^72〜10^111）は無量大数を積み上げ（例: "1万無量大数"）。
     // 命数を超える／積み上げきれない（グラハム数級など）ときは指数を漢数字化した冪乗の塔（"10^10^308"）。
-    return compoundAboveMuryo(value, kanjiUnits) ?? `10^${kanjiOfNumber(e)}`;
+    // depth=3 では積み上げ数が多くても「k乗無量大数」形式にフォールバック（命数の隙間を埋める）。
+    return compoundAboveMuryo(value, kanjiUnits, _joDepth >= 3) ?? `10^${kanjiOfNumber(e)}`;
   }
 
   if (type === 'english') {
