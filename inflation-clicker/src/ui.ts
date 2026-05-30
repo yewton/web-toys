@@ -1,11 +1,11 @@
 import { BigNum } from './bignum';
 import { difficultyConfigs, difficultyOrder, type Difficulty } from './config';
 import { formatNumber, formatTime, addRuby, kanjiUnits, joUnits } from './format';
-import { state } from './state';
+import { state, hasSavedGameForDiff } from './state';
 
 export interface UICallbacks {
   onStart: (diff: Difficulty) => void;
-  onContinue: () => void;
+  onContinue: (diff: Difficulty) => void;
   onReset: () => void;
   onAttack: (x: number, y: number) => void;
   onItem: (x: number, y: number) => void;
@@ -15,7 +15,6 @@ let menuScreen!: HTMLElement;
 let gameScreen!: HTMLElement;
 let clearedOverlay!: HTMLElement;
 let meisuuScreen!: HTMLElement;
-let continueBtn!: HTMLButtonElement;
 let itemEl!: HTMLElement;
 let enemyEl!: HTMLElement;
 let atkPanel!: HTMLElement;
@@ -42,7 +41,6 @@ export function setupUI(cb: UICallbacks): void {
   menuScreen = $('menuScreen');
   gameScreen = $('gameScreen');
   clearedOverlay = $('clearedOverlay');
-  continueBtn = $('continueBtn') as HTMLButtonElement;
   itemEl = $('item');
   enemyEl = $('enemy');
   atkPanel = $('atkPanel');
@@ -55,7 +53,6 @@ export function setupUI(cb: UICallbacks): void {
   setupMeisuuScreen();
 
   buildMenu(cb);
-  continueBtn.addEventListener('click', () => cb.onContinue());
   $('resetBtn').addEventListener('click', () => cb.onReset());
   backBtn.addEventListener('click', () => cb.onReset());
 
@@ -71,7 +68,6 @@ function buildMenu(cb: UICallbacks): void {
   let extremeHeadingAdded = false;
   for (const diff of difficultyOrder) {
     const cfg = difficultyConfigs[diff];
-    // 極限モードの手前に「極限（自己責任）」見出しを挿入
     if (cfg.extreme && !extremeHeadingAdded) {
       const heading = document.createElement('div');
       heading.className = 'pt-3 pb-1 text-xs font-semibold tracking-widest text-amber-500/80';
@@ -79,17 +75,49 @@ function buildMenu(cb: UICallbacks): void {
       list.appendChild(heading);
       extremeHeadingAdded = true;
     }
-    const btn = document.createElement('button');
-    btn.className = cfg.extreme
-      ? 'group w-full px-5 py-4 rounded-lg border border-amber-500/25 bg-amber-500/[0.04] ' +
-        'hover:border-amber-400/50 hover:bg-amber-500/[0.08] transition-colors text-left'
-      : 'group w-full px-5 py-4 rounded-lg border border-white/10 bg-white/[0.03] ' +
-        'hover:border-emerald-400/40 hover:bg-white/[0.06] transition-colors text-left';
-    btn.innerHTML =
-      `<div class="text-lg font-semibold ${cfg.extreme ? 'text-amber-200' : 'text-zinc-100'}">${cfg.name}</div>` +
-      `<div class="text-sm ${cfg.extreme ? 'text-amber-500/70' : 'text-zinc-500'}">${cfg.desc}</div>`;
-    btn.addEventListener('click', () => cb.onStart(diff));
-    list.appendChild(btn);
+    const card = document.createElement('div');
+    card.className = cfg.extreme
+      ? 'w-full px-5 py-4 rounded-lg border border-amber-500/25 bg-amber-500/[0.04]'
+      : 'w-full px-5 py-4 rounded-lg border border-white/10 bg-white/[0.03]';
+
+    const nameColor = cfg.extreme ? 'text-amber-200' : 'text-zinc-100';
+    const descColor = cfg.extreme ? 'text-amber-500/70' : 'text-zinc-500';
+    const contBtnId = `contBtn-${diff}`;
+    const startBtnId = `startBtn-${diff}`;
+
+    card.innerHTML =
+      `<div class="text-lg font-semibold ${nameColor}">${cfg.name}</div>` +
+      `<div class="text-sm ${descColor} mt-0.5">${cfg.desc}</div>` +
+      `<div class="mt-3 flex gap-2">` +
+        `<button id="${contBtnId}" class="hidden flex-1 px-3 py-2 text-sm rounded-md border border-emerald-400/30 ` +
+          `bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20 transition-colors">` +
+          `つづきから` +
+        `</button>` +
+        `<button id="${startBtnId}" class="flex-1 px-3 py-2 text-sm rounded-md border ` +
+          `${cfg.extreme ? 'border-amber-500/25 bg-amber-500/[0.06] text-amber-200 hover:bg-amber-500/[0.12]' : 'border-white/10 bg-white/[0.05] text-zinc-200 hover:bg-white/[0.1]'} ` +
+          `transition-colors">` +
+          `はじめから` +
+        `</button>` +
+      `</div>`;
+
+    card.querySelector(`#${contBtnId}`)!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cb.onContinue(diff);
+    });
+    card.querySelector(`#${startBtnId}`)!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cb.onStart(diff);
+    });
+
+    list.appendChild(card);
+  }
+}
+
+/** メニュー表示時に各難易度カードの「つづきから」ボタンを最新セーブ状態で更新する。 */
+function refreshMenuSaveButtons(): void {
+  for (const diff of difficultyOrder) {
+    const btn = document.getElementById(`contBtn-${diff}`);
+    if (btn) btn.classList.toggle('hidden', !hasSavedGameForDiff(diff));
   }
 }
 
@@ -135,9 +163,12 @@ export function renderScreen(): void {
   menuScreen.classList.toggle('hidden', state.screen !== 'menu');
   gameScreen.classList.toggle('hidden', state.screen === 'menu');
   clearedOverlay.classList.toggle('hidden', state.screen !== 'cleared');
-  continueBtn.classList.toggle('hidden', !state.hasSave);
+  if (state.screen === 'menu') {
+    refreshMenuSaveButtons();
+  }
   if (state.screen !== 'menu') {
     $('diffName').textContent = difficultyConfigs[state.difficulty].name;
+    enemyEl.textContent = state.enemyEmoji;
   }
   // 撃破演出の名残をリセット（新規ゲーム/タイトルへ戻ったとき）
   if (state.screen !== 'cleared') {
@@ -298,7 +329,8 @@ export function setHardening(level: number): void {
 const ENEMY_EMOJIS = ['🧌', '🗿', '🦹', '🐉', '🦖', '🐊', '🦂', '🐦‍🔥'];
 
 export function setRandomEnemyEmoji(): void {
-  enemyEl.textContent = ENEMY_EMOJIS[Math.floor(Math.random() * ENEMY_EMOJIS.length)];
+  state.enemyEmoji = ENEMY_EMOJIS[Math.floor(Math.random() * ENEMY_EMOJIS.length)];
+  enemyEl.textContent = state.enemyEmoji;
 }
 
 /** ヒット時の敵リコイル量（0〜1）。transform のみ動かすので軽い。v=0 のとき振動クラスも除去。 */

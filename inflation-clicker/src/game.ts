@@ -14,9 +14,9 @@ import {
   state,
   resetForDifficulty,
   save,
-  loadSave,
-  hasSavedGame,
-  clearSave,
+  loadSaveForDiff,
+  clearSaveForDiff,
+  migrateLegacySave,
 } from './state';
 import {
   spawnDamage,
@@ -114,7 +114,7 @@ export function initGame(): void {
   gaugeCtx = gaugeCanvas.getContext('2d')!;
   fxCtx = fxCanvas.getContext('2d')!;
 
-  state.hasSave = hasSavedGame();
+  migrateLegacySave();
   gauge = makeGauge(difficultyConfigs[state.difficulty].hp.e);
 
   setupUI({
@@ -330,8 +330,8 @@ function startGame(diff: Difficulty): void {
   save();
 }
 
-function continueGame(): void {
-  if (!loadSave()) return;
+function continueGame(diff: Difficulty): void {
+  if (!loadSaveForDiff(diff)) return;
   const cfg = difficultyConfigs[state.difficulty];
   gauge = makeGauge(cfg.hp.e);
   // ロード直後に幻の赤残像 / 過去 box flash が出ないよう、表示状態を実値に合わせる
@@ -428,7 +428,7 @@ function triggerDefeat(): void {
     state.itemAvailable = false;
   }
   // この run は終了。再開用セーブを消す（死んだ 'playing' を Continue で再開させない）
-  clearSave();
+  clearSaveForDiff(state.difficulty);
 
   // 敵の中心からスパークを撒く（溜まっていたダメージ数値は消してから）
   const rect = (document.getElementById('enemy') as HTMLElement).getBoundingClientRect();

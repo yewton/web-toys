@@ -33,8 +33,8 @@ export interface GameState {
   totalClicks: number;
   /** 単発で出した最大ダメージ（リザルト表示用）。`m × 10^e`。 */
   maxHit: BigNum;
-  /** Continue 可能なセーブが存在するか（メニュー表示判定用） */
-  hasSave: boolean;
+  /** 現在の敵絵文字。セーブ/ロード時に復元する。 */
+  enemyEmoji: string;
 }
 
 export const state: GameState = {
@@ -51,7 +51,7 @@ export const state: GameState = {
   elapsedTime: 0,
   totalClicks: 0,
   maxHit: new BigNum(0, 0),
-  hasSave: false,
+  enemyEmoji: '🧌',
 };
 
 /** 難易度を選んで新規ゲーム用に状態を初期化する。 */
@@ -71,7 +71,12 @@ export function resetForDifficulty(diff: Difficulty): void {
   state.maxHit = new BigNum(0, 0);
 }
 
-const SAVE_KEY = 'inflationClicker.save';
+const SAVE_KEY_PREFIX = 'inflationClicker.save.';
+const LEGACY_SAVE_KEY = 'inflationClicker.save';
+
+function saveKeyFor(diff: Difficulty): string {
+  return `${SAVE_KEY_PREFIX}${diff}`;
+}
 
 interface SerializedBig {
   m: number;
@@ -91,10 +96,29 @@ interface SaveData {
   elapsedTime: number;
   totalClicks: number;
   maxHit: SerializedBig;
+  enemyEmoji?: string;
 }
 
 const ser = (n: BigNum): SerializedBig => ({ m: n.m, e: n.e });
 const deser = (s: SerializedBig): BigNum => new BigNum(s.m, s.e);
+
+/** 旧フォーマット（単一スロット）のセーブを難易度別キーへ移行する。起動時に 1 回呼ぶ。 */
+export function migrateLegacySave(): void {
+  try {
+    const raw = localStorage.getItem(LEGACY_SAVE_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw) as Partial<SaveData>;
+    if (d.difficulty && difficultyConfigs[d.difficulty]) {
+      const newKey = saveKeyFor(d.difficulty);
+      if (!localStorage.getItem(newKey)) {
+        localStorage.setItem(newKey, raw);
+      }
+    }
+    localStorage.removeItem(LEGACY_SAVE_KEY);
+  } catch {
+    // no-op
+  }
+}
 
 /** 現在の進行状況を localStorage に保存する。 */
 export function save(): void {
@@ -114,21 +138,20 @@ export function save(): void {
       elapsedTime: state.elapsedTime,
       totalClicks: state.totalClicks,
       maxHit: ser(state.maxHit),
+      enemyEmoji: state.enemyEmoji,
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    state.hasSave = true;
+    localStorage.setItem(saveKeyFor(state.difficulty), JSON.stringify(data));
   } catch {
     // localStorage が使えない環境では黙って諦める
   }
 }
 
-/** 有効な進行中セーブが存在するか（読み込みはしない）。 */
-export function hasSavedGame(): boolean {
+/** 指定難易度の有効な進行中セーブが存在するか（読み込みはしない）。 */
+export function hasSavedGameForDiff(diff: Difficulty): boolean {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(saveKeyFor(diff));
     if (!raw) return false;
     const d = JSON.parse(raw) as Partial<SaveData>;
-    // 未知の難易度名（バージョン跨ぎ等）のセーブは無効扱いにする
     if (!d.difficulty || !difficultyConfigs[d.difficulty]) return false;
     return d.screen === 'playing' || d.screen === 'cleared';
   } catch {
@@ -136,15 +159,15 @@ export function hasSavedGame(): boolean {
   }
 }
 
-/** セーブを state へ読み込む。成功すれば true。 */
-export function loadSave(): boolean {
+/** 指定難易度のセーブを state へ読み込む。成功すれば true。 */
+export function loadSaveForDiff(diff: Difficulty): boolean {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(saveKeyFor(diff));
     if (!raw) return false;
     const d = JSON.parse(raw) as SaveData;
     if (d.screen !== 'playing' && d.screen !== 'cleared') return false;
-    // 未知の難易度名のセーブは読み込まない（クラッシュ防止）
     if (!d.difficulty || !difficultyConfigs[d.difficulty]) return false;
+    if (d.difficulty !== diff) return false;
     state.screen = d.screen;
     state.difficulty = d.difficulty;
     state.maxHp = deser(d.maxHp);
@@ -158,17 +181,18 @@ export function loadSave(): boolean {
     state.elapsedTime = d.elapsedTime ?? 0;
     state.totalClicks = d.totalClicks ?? 0;
     state.maxHit = d.maxHit ? deser(d.maxHit) : new BigNum(0, 0);
+    if (d.enemyEmoji) state.enemyEmoji = d.enemyEmoji;
     return true;
   } catch {
     return false;
   }
 }
 
-export function clearSave(): void {
+/** 指定難易度のセーブを削除する。 */
+export function clearSaveForDiff(diff: Difficulty): void {
   try {
-    localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem(saveKeyFor(diff));
   } catch {
     // no-op
   }
-  state.hasSave = false;
 }
