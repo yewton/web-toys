@@ -239,18 +239,23 @@ export const joUnits = joUnitData
 /**
  * 無量大数(10^68)を超える数を「先頭ブロックの複合漢数字 ＋ 無量大数 ×k」で表す。
  * 例: 10^112 → "1載無量大数"（載=10^44, ×無量大数=10^68 で 10^112）、10^136 → "1無量大数無量大数"。
- * k ≤ MURYO_MAX_STACK: 無量大数を k 回繰り返す。
- * k > MURYO_MAX_STACK: allowCount=true なら「k乗無量大数」形式、false なら null（呼び出し側で冪乗の塔へ）。
+ * k ≤ MURYO_MAX_STACK: 無量大数を k 回繰り返す（端数は先頭ブロックで正確に表す）。
+ * k > MURYO_MAX_STACK: allowCount=true なら「k乗無量大数」一語、false なら null（呼び出し側で冪乗の塔へ）。
  */
 function compoundAboveMuryo(value: BigNum, maxUnits: number, allowCount = false): string | null {
   const k = Math.floor(value.e / MURYO_E);
   if (k < 1) return null;
-  // k が大きすぎて無量大数を連ねられない場合は先頭計算を省略して早期リターン。
-  if (k > MURYO_MAX_STACK && !allowCount) return null;
+  if (k > MURYO_MAX_STACK) {
+    // 無量大数を連ねるには k が多すぎる。「最も近い無量大数のべき」一語で表す。
+    // ここで先頭ブロックを足すと、その桁列が指数 k と区切り無く癒着して
+    // 「無量大数の(先頭+k)乗」と誤読され桁違いの嘘になるため、端数は丸めて畳む
+    // （誤差は高々 10^34 ＝ 指数比では無視できる範囲。常に過小側で嘘にならない）。
+    if (!allowCount) return null;
+    return kanjiOfNumber(Math.round(value.e / MURYO_E)) + '乗無量大数';
+  }
   // 先頭ブロック = m × 10^(e − 68k)（< 10^68 なので万進法の複合漢数字で表せる）。
   // BigNum.m ∈ [1, 10) が保証されているので正規化ループは不要。
   const head = compoundKanji(new BigNum(value.m, value.e - MURYO_E * k), maxUnits);
-  if (k > MURYO_MAX_STACK) return head + kanjiOfNumber(k) + '乗無量大数';
   return head + '無量大数'.repeat(k);
 }
 

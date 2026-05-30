@@ -56,10 +56,12 @@ describe('formatNumber', () => {
   });
 
   it('uses k乗無量大数 notation at depth=3 for joUnit-range numbers', () => {
-    // e=1e20 は joUnit 範囲内（< 3.7e37）→ depth=3 で k乗無量大数 形式の命数複合表記
-    expect(formatNumber(new BigNum(1, 1e20), 'kanji')).toBe('11京6720兆3085億乗無量大数鉢羅麼怛羅諦羅偈羅');
+    // depth=3 では「最も近い無量大数のべき」一語で表す。指数 k は命数で整形され、
+    // 先頭ブロック（端数倍率）を足して k と癒着させない（"11京…"のような誤読を防ぐ）。
+    // e=1e20 は joUnit 範囲内（< 3.7e37）→ k乗無量大数 ＋ 上数法命数 3 連
+    expect(formatNumber(new BigNum(1, 1e20), 'kanji')).toBe('1京6720兆3085億乗無量大数鉢羅麼怛羅諦羅偈羅');
     // e=5e30 も joUnit 範囲内
-    expect(formatNumber(new BigNum(1, 5e30), 'kanji')).toBe('163𥝱1319垓3329京乗無量大数駄麼羅無我鉢頭摩');
+    expect(formatNumber(new BigNum(1, 5e30), 'kanji')).toBe('63𥝱1319垓3329京乗無量大数駄麼羅無我鉢頭摩');
   });
 
   it('uses english units', () => {
