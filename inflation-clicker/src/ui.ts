@@ -254,7 +254,11 @@ export function markStatsDirty(): void {
   lastElapsed = -1;
 }
 
+const ITEM_EMOJIS = ['🍣', '🍖', '🍙', '🍯', '🧉', '🍅', '🍄', '🍗', '🍢', '🍡'];
+
 export function showItemAt(top: string, left: string): void {
+  const span = itemEl.querySelector('span');
+  if (span) span.textContent = ITEM_EMOJIS[Math.floor(Math.random() * ITEM_EMOJIS.length)];
   itemEl.style.top = top;
   itemEl.style.left = left;
   itemEl.classList.remove('hidden');
