@@ -11,16 +11,16 @@ export interface GameState {
   /** 現在の 1 クリック当たりのダメージ倍率 = 10^atk.e。アイテム取得後だけ atkTargetE に向かって徐々に上がる。 */
   atk: BigNum;
   /**
-   * 攻撃力の目標指数。アイテムを 1 個取ると CHUNK_E だけジャンプし、その後 atk.e が
-   * クリック毎に一定歩幅(= CHUNK_E / CLICK_BUDGET_PER_ITEM)でここへ追従する。
+   * 攻撃力の目標指数。アイテムを 1 個取ると `chunkAtE(atkTargetE)` だけジャンプし、その後
+   * atk.e がクリック毎に一定歩幅(= chunk / CLICK_BUDGET_PER_ITEM)でここへ追従する。
    * 追いついた後は止まる＝アイテムを取らないと atk.e は動かない。
    */
   atkTargetE: number;
   /**
    * 累積ダメージの log10。各クリックで dmg = m × 10^atk.e を log_add で加算する。
-   * ゲージは `consumed = damageE / EXP_PER_BOX` 経由で対数的に動く（hpGauge.ts 参照）。
+   * ゲージは `consumedFromDamageE(damageE)` で動的密度に変換される（hpGauge.ts 参照）。
    * 序盤 atk.e=0 のうちは加算してもほぼ変わらず＝視覚的にはほぼ削れない＝アイテムで
-   * atk.e をインフレさせて初めて適切なペースで削れる（無限時間あれば理論上は撃破可能）。
+   * atk.e をインフレさせて初めて適切なペースで削れる。
    */
   damageE: number;
   itemsCollected: number;
@@ -39,7 +39,7 @@ export interface GameState {
 
 export const state: GameState = {
   screen: 'menu',
-  difficulty: 'min1',
+  difficulty: 'muryotaisu',
   maxHp: new BigNum(1, 68),
   atk: new BigNum(1, 0),
   atkTargetE: 0,

@@ -3,7 +3,9 @@ import {
   difficultyConfigs,
   ATTACK,
   GAUGE,
-  EXP_PER_BOX,
+  chunkAtE,
+  consumedAtDamage,
+  damageEAtConsumed,
   displayBoxesForHp,
   totalSegmentsForHp,
   type Difficulty,
@@ -180,6 +182,10 @@ function setupDevTools(): void {
     setDamageE: (e: number) => {
       state.damageE = e;
     },
+    /** ゲージ位置（消費した箱数）を直接セット。コーススケーリング込みの逆変換で damageE に戻す。 */
+    setConsumed: (boxes: number) => {
+      state.damageE = damageEAtConsumed(boxes, state.maxHp.e);
+    },
     /** 自動クリックの切替（コンソールからも：__clicker.autoClick(true, 30, false) 等） */
     autoClick,
   };
@@ -224,7 +230,7 @@ function loop(now: number): void {
   if (state.screen !== 'menu') {
     // 削った real segments 数（連続値、コース不問の per-click rate）。
     const cfg = difficultyConfigs[state.difficulty];
-    const consumed = state.damageE / EXP_PER_BOX;
+    const consumed = consumedAtDamage(state.damageE, cfg.hp.e);
     advanceGauge(gauge, consumed, now);
 
     // ゲージは「consumed が変わった / 赤残像追従中 / 箱フラッシュ・スライド中」のときだけ描き直す。
@@ -303,7 +309,7 @@ function continueGame(): void {
   const cfg = difficultyConfigs[state.difficulty];
   gauge = makeGauge(cfg.hp.e);
   // ロード直後に幻の赤残像 / 過去 box flash が出ないよう、表示状態を実値に合わせる
-  const consumed = state.damageE / EXP_PER_BOX;
+  const consumed = consumedAtDamage(state.damageE, cfg.hp.e);
   const slice = sliceGauge(consumed, gauge.totalSegments, gauge.displayedSegments);
   gauge.displayedConsumed = consumed;
   gauge.prevConsumedInt = Math.min(gauge.totalSegments, Math.floor(consumed));
@@ -337,11 +343,11 @@ function handleAttack(x: number, y: number): void {
 
   const cfg = difficultyConfigs[state.difficulty];
 
-  // アイテム取得後の徐々ランプ：atk.e を atkTargetE へ「CHUNK_E / CLICK_BUDGET_PER_ITEM」歩で
-  // 近づける。取得直後に攻撃力が一気に跳ね上がらず、その後の数タップ（既定 9 回）で段階的に
-  // 効いてくる。追いついた後（atk.e == atkTargetE）は止まる＝アイテム無しでは伸びない。
+  // アイテム取得後の徐々ランプ：atk.e を atkTargetE へ「chunkAtE / CLICK_BUDGET_PER_ITEM」歩で
+  // 近づける。step を「現在の atk.e」で評価することで、handleItem 側の chunk と歩幅が一致し、
+  // ちょうど CLICK_BUDGET_PER_ITEM クリックで追いつく。Phase B では chunk が伸びるので step も伸びる。
   if (state.atk.e < state.atkTargetE) {
-    const step = (cfg.hp.e / cfg.totalItems) / ATTACK.CLICK_BUDGET_PER_ITEM;
+    const step = chunkAtE(state.atk.e) / ATTACK.CLICK_BUDGET_PER_ITEM;
     state.atk = new BigNum(1, Math.min(state.atkTargetE, state.atk.e + step));
   }
 
@@ -411,10 +417,10 @@ function handleItem(x: number, y: number): void {
   state.itemAvailable = false;
   hideItem();
 
-  // 攻撃力の「目標」指数だけを 1 アイテム分（= CHUNK_E ≈ 3.4）上げる。実際の atk.e は
-  // 次のタップから handleAttack 内のランプで段階的に追従する＝取得直後にゲージが急に
-  // 削れず、その後の数タップで滑らかに削れていく。
-  const chunk = cfg.hp.e / cfg.totalItems;
+  // 攻撃力の「目標」指数を 1 アイテム分（= chunkAtE(atkTargetE)）上げる。Phase A では一定 C0、
+  // Phase B では現在指数に比例した量。実際の atk.e は次のタップから handleAttack 内のランプで
+  // 段階的に追従するので、取得直後にゲージが急に削れず、その後の数タップで滑らかに削れていく。
+  const chunk = chunkAtE(state.atkTargetE);
   state.atkTargetE = Math.min(cfg.hp.e, state.atkTargetE + chunk);
   state.clicksSinceItem = 0;
 

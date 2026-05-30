@@ -48,10 +48,10 @@ function drawSkewed(
 /**
  * ゲージ一式（前面バー＋残ゲージ箱）を描く。
  *
- * - 全コース共通：1 箱 = EXP_PER_BOX のダメージ。`consumed` (= damageE / EXP_PER_BOX) で進む。
+ * - 全コース共通：1 箱 = `expPerBoxAt(e)` のダメージ（動的密度）。`consumed` (= `consumedFromDamageE(damageE)`) で進む。
  * - 最前面バーは緑、最終ゲージ（`slice.isFinal`）のときだけ多層めくり（緑→青→黄→黒）。
  * - 残ゲージ箱は KH 同様、右寄せの `displayedSegments-1` 個のうち左から削れていく。
- *   over-cap コース（5分・30分・極限）は前半「箱は静止、bar だけ削れる」フェーズが続き、
+ *   over-cap コース（不可説不可説転・グラハム数）は前半「箱は静止、bar だけ削れる」フェーズが続き、
  *   `totalSegments - displayedSegments` を越えてから箱が左から消えていく。
  *
  * cssW/cssH は CSS ピクセル、dpr はデバイスピクセル比。
@@ -121,7 +121,7 @@ export function drawGauge(
 
   // --- 残ゲージ箱 ---
   // 箱は「現在削っているゲージを除いた残り本数」＝合計 displayedSegments-1 個ぶん。
-  // 1分=1個 / 5分=9個 / 30分=59個 / 極限=59個。
+  // 無量大数=6個 / 摩婆羅=31個 / 界分=52個 / 不可説不可説転以上=59個（コンベア cap）。
   const boxCount = Math.max(0, g.displayedSegments - 1);
   if (boxCount === 0) return;
 
@@ -129,7 +129,7 @@ export function drawGauge(
   const boxH = Math.max(8, Math.min(12, cssH - boxTop - 2));
   const gap = 2;
   // 箱サイズは行全体（boxCount 個）がバー幅にちょうど収まるよう自動調整、
-  // 小さすぎる場合は最低 3px、大きすぎる場合は 24px で頭打ち（1分の極端な巨大箱を防ぐ）。
+  // 小さすぎる場合は最低 3px、大きすぎる場合は 24px で頭打ち（無量大数の極端な巨大箱を防ぐ）。
   const boxW = Math.max(3, Math.min(24, (barW - gap * Math.max(0, boxCount - 1)) / boxCount));
   const slot = boxW + gap;
   const groupW = boxCount * boxW + Math.max(0, boxCount - 1) * gap;

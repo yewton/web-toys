@@ -1,6 +1,6 @@
 import { BigNum } from './bignum';
 
-export type Difficulty = 'min1' | 'min5' | 'min30' | 'fudasetsu' | 'graham';
+export type Difficulty = 'muryotaisu' | 'mabara' | 'kaibun' | 'fukasetsu' | 'graham';
 
 export interface DifficultyConfig {
   /** コース名 */
@@ -9,24 +9,117 @@ export interface DifficultyConfig {
   desc: string;
   /** 敵の総 HP */
   hp: BigNum;
-  /** クリアまでに集めるアイテム総数 */
+  /** クリアまでに集めるアイテム総数（chunkAtE から導出） */
   totalItems: number;
-  /** 極限モード（事実上クリア不能・自己責任）。メニューで警告枠として描く */
+  /** 極限モード（実時間で 1 日級。メニューで警告枠として描く） */
   extreme?: boolean;
 }
 
 /**
- * 1 アイテム分の atk.e 上昇量（チャンク）。全コース共通。
- * totalItems = hp.e / CHUNK_E（HPだけで導出される。コース毎に手動チューニングしない）。
+ * ゲージ密度・インフレ率のチューニング定数（全コース共通）。HP しか変えないという
+ * 設計原則の下、ここの 3 値だけで「ゲージの削れリズム」と「命数体験のスケール」を制御する。
  */
-export const CHUNK_E = 3.4;
-/**
- * ゲージの 1 箱が表す damage 量（log10）。コース共通。30分(hp.e=2040)がちょうど
- * 60 箱に収まる粒度（= 2040/60）に揃え、1分(=2 箱)/5分(=10)/30分(=60)を全量表示できる。
- * 極限は totalSegments が cap を超えるのでコンベアモードに入る。
- */
+export const GAUGE_DENSITY = {
+  /**
+   * 1 ボックスを削るのに何アイテム分かかるか。1 アイテム = `chunkAtE` 分の atk.e 上昇 ≈
+   * 1 アイテム分の damageE 増、なので「1 box ≒ K アイテム ≒ K × CLICK_BUDGET クリック」となる。
+   * 体感のためのキー定数：小さくすると箱が細かく速く削れ、大きくすると重厚にゆっくり削れる。
+   */
+  ITEMS_PER_BOX: 10,
+  /**
+   * 万進法ゾーン（e < INFL_E）での chunk の床値。`atk.e` の per-item 上昇量で、
+   * 「1 命数（4 桁）あたり何アイテム使うか」 = 4 / C0 を決める。
+   * 1.0 だと万進法 1 命数 ≒ 4 アイテム ≒ 36 タップ、3-5 タップの最低保証は十分余裕。
+   */
+  C0: 1.0,
+  /**
+   * 「インフレ率がインフレし始める」しきい値。e ≤ INFL_E では chunk = C0 一定、
+   * e > INFL_E では chunk = e / INFL_E と現在指数に比例して伸びる。
+   * 100 は無量大数(68)のすぐ上＝「無量大数を越えた瞬間から世界が加速する」物語に対応。
+   */
+  INFL_E: 100,
+} as const;
+
+/** 画面に並べる箱の上限（コンベアモードのトリガ）。 */
 export const DISPLAY_CAP_BOXES = 60;
-export const EXP_PER_BOX = 34;
+
+/**
+ * 1 アイテムが atk.e を押し上げる量。`e ≤ INFL_E` までは一定 (= C0)、その先は現在の指数に
+ * 比例してインフレ率自体が伸びる。これにより上数法の命数間隔（次の命数 = 2 × 現在指数）と
+ * chunk の伸びが同調し、「1 命数あたりのアイテム数」が自然に一定（= INFL_E / C0 / ln(2) 近辺）
+ * に保たれる。
+ */
+export function chunkAtE(e: number): number {
+  const { C0, INFL_E } = GAUGE_DENSITY;
+  return Math.max(C0, e / INFL_E);
+}
+
+/**
+ * 1 ボックスが表す damageE 量。chunkAtE と同じ形で伸びるので、per-click のゲージ削り量
+ * (≒ chunk / (CLICK_BUDGET × expPerBox)) は e に依らず一定 ≒ 1/(CLICK_BUDGET × ITEMS_PER_BOX)
+ * になる＝コース全域で同じ「削れ感」が得られる。
+ */
+export function expPerBoxAt(e: number): number {
+  return GAUGE_DENSITY.ITEMS_PER_BOX * chunkAtE(e);
+}
+
+/**
+ * damageE → consumed (削った箱数の連続値)。`∫₀^D 1/expPerBoxAt(e) de` の閉形式。
+ * Phase A (D ≤ INFL_E) は線形、Phase B は対数。境界で C¹ 連続。
+ */
+export function consumedFromDamageE(damageE: number): number {
+  if (damageE <= 0) return 0;
+  const { ITEMS_PER_BOX, C0, INFL_E } = GAUGE_DENSITY;
+  const boxA = INFL_E / (ITEMS_PER_BOX * C0); // Phase A の総箱数 = INFL_E / (K × C0)
+  if (damageE <= INFL_E) return damageE / (ITEMS_PER_BOX * C0);
+  // Phase B: ∫ 1/(K × e/INFL_E) de = (INFL_E/K) × ln(e)
+  return boxA + (INFL_E / ITEMS_PER_BOX) * Math.log(damageE / INFL_E);
+}
+
+/**
+ * `consumedFromDamageE` の逆関数（テスト・ダーティチェック・デバッグ用）。
+ * 「ゲージ位置 X 箱から復元したい damageE は？」に答える。
+ */
+export function damageEFromConsumed(consumed: number): number {
+  if (consumed <= 0) return 0;
+  const { ITEMS_PER_BOX, C0, INFL_E } = GAUGE_DENSITY;
+  const boxA = INFL_E / (ITEMS_PER_BOX * C0);
+  if (consumed <= boxA) return consumed * ITEMS_PER_BOX * C0;
+  return INFL_E * Math.exp(((consumed - boxA) * ITEMS_PER_BOX) / INFL_E);
+}
+
+/**
+ * 端数調整：`consumedFromDamageE(hp.e)` は一般に整数にならないので、`totalSegments` と
+ * 揃うように線形にストレッチする。`damageE = hp.e` でちょうど `consumed = totalSegments` に
+ * 到達＝撃破時にゲージがピッタリ 0 になる。スケーリング比は最大でも ~1.03 (無量大数) なので
+ * per-click 削り感は実質変化なし。
+ */
+export function consumedAtDamage(damageE: number, hpE: number): number {
+  const rawAtHp = consumedFromDamageE(hpE);
+  if (rawAtHp <= 0) return 0;
+  const total = Math.max(1, Math.ceil(rawAtHp));
+  return consumedFromDamageE(damageE) * (total / rawAtHp);
+}
+
+/** `consumedAtDamage` の逆関数（devtools 用）。 */
+export function damageEAtConsumed(consumed: number, hpE: number): number {
+  const rawAtHp = consumedFromDamageE(hpE);
+  if (rawAtHp <= 0) return 0;
+  const total = Math.max(1, Math.ceil(rawAtHp));
+  return damageEFromConsumed(consumed * (rawAtHp / total));
+}
+
+/**
+ * 撃破までに必要なアイテム総数。`∫₀^hp.e 1/chunkAtE(e) de` の閉形式。
+ * Phase A は線形、Phase B は対数なので、巨大な hp.e でも overflow しない。
+ */
+export function totalItemsForHp(hpE: number): number {
+  if (hpE <= 0) return 1;
+  const { C0, INFL_E } = GAUGE_DENSITY;
+  const itemsA = INFL_E / C0; // Phase A 全域分のアイテム数 = INFL_E / C0
+  if (hpE <= INFL_E) return Math.max(1, Math.round(hpE / C0));
+  return Math.max(1, Math.round(itemsA + INFL_E * Math.log(hpE / INFL_E)));
+}
 
 /** HP指数からコース設定を作る。コース間の差異は HP（と説明文）のみ。 */
 function course(name: string, desc: string, hpE: number, extreme = false): DifficultyConfig {
@@ -34,39 +127,43 @@ function course(name: string, desc: string, hpE: number, extreme = false): Diffi
     name,
     desc,
     hp: new BigNum(1, hpE),
-    totalItems: Math.max(1, Math.round(hpE / CHUNK_E)),
+    totalItems: totalItemsForHp(hpE),
     extreme,
   };
 }
 
-// コース間の差異は「敵の HP」だけ。ゲージ仕様 / アイテム挙動はすべて共通。
+// コース間の差異は「敵の HP」だけ。chunkAtE / expPerBoxAt はコース不問の全域共通。
 export const difficultyConfigs: Record<Difficulty, DifficultyConfig> = {
-  // 時間コース（HP指数を上げるほど道中で命数が登る。最後のゲージは多層クライマックス）
-  min1:  course('1分コース',  '無量大数（10⁶⁸）まで。腕慣らしに。',                       68),
-  min5:  course('5分コース',  '阿伽羅（10³⁴⁰）まで。矜羯羅・阿伽羅など珍しい命数が出る。', 340),
-  min30: course('30分コース', '阿婆羅（10²⁰⁴⁰）まで。命数を駆け上がる長丁場。',           2040),
-  // 極限モード（自己責任）。HP が桁外れ＝事実上クリア不能（同じロジックの帰結としてそうなる）。
-  fudasetsu: course('不可説不可説転級', '10^(3.7×10³⁷)。毎秒10クリックでも約10³⁰年。自己責任で。', 3.7e37,  true),
-  graham:    course('グラハム数級',     '10^(1.7×10³⁰⁸)。約10³⁰⁰年。完全にネタ。自己責任で。',     1.7e308, true),
+  // 4 つの本コース：到達命数で命名。所要時間は INFL_E=100 の曲線における目安。
+  muryotaisu: course('無量大数 コース', '万進法の最果てまで。サクッと 1 分。',                       68),
+  mabara:     course('摩婆羅 コース',   '上数法に踏み入る。そこそこ 5 分。',                         896),
+  kaibun:     course('界分 コース',     '上数法の終端まで。じっくり 8 分。',                         7168),
+  fukasetsu:  course('不可説不可説転 コース', '華厳経の象徴的命数。極限 2 時間。',                    3.7e37),
+  // フレーバー枠（事実上クリア不能ではないが、文字通り 1 日張り付くプレイ）
+  graham:     course('グラハム数 コース', '記号上の到達点。連打で 1 週間級。本当にやる？', 1.7e308, true),
 };
 
 /** メニュー表示順 */
-export const difficultyOrder: Difficulty[] = ['min1', 'min5', 'min30', 'fudasetsu', 'graham'];
+export const difficultyOrder: Difficulty[] = [
+  'muryotaisu',
+  'mabara',
+  'kaibun',
+  'fukasetsu',
+  'graham',
+];
 
 /**
- * 真の総 segments 数。1 箱 = EXP_PER_BOX のダメージなので hp.e / EXP_PER_BOX。
- * 極限コースでは天文学的な値になる（描画はしない、論理的な総量として保持）。
+ * 真の総 segments 数。damageE = hp.e に到達した時の consumed = 撃破ピッタリの箱数。
+ * 極限ゾーンでは天文学的になるので、表示は DISPLAY_CAP_BOXES で頭打ちにする（コンベアモード）。
  */
 export function totalSegmentsForHp(hpE: number): number {
   if (hpE <= 0) return 0;
-  return Math.ceil(hpE / EXP_PER_BOX);
+  return Math.max(1, Math.ceil(consumedFromDamageE(hpE)));
 }
 
 /**
  * 画面に並べる箱の本数。`totalSegments(hpE)` を DISPLAY_CAP で頭打ちにするだけ。
- * EXP_PER_BOX = 34 と DISPLAY_CAP = 60 の組み合わせで:
- *   1分=2 / 5分=10 / 30分=60（全量表示） / 不可説&グラハム=60（cap、コンベア）。
- * 全コースで 1 箱は同じダメージ量を表す＝ 1 クリックの per-box 削り速度は共通。
+ * 動的密度の下では、無量大数 ≈ 7 箱、摩婆羅 ≈ 32 箱、界分 ≈ 53 箱、不可説不可説転は cap (60) に達してコンベアに入る。
  */
 export function displayBoxesForHp(hpE: number): number {
   return Math.max(1, Math.min(DISPLAY_CAP_BOXES, totalSegmentsForHp(hpE)));
@@ -75,9 +172,8 @@ export function displayBoxesForHp(hpE: number): number {
 /** 攻撃力の挙動チューニング */
 export const ATTACK = {
   /**
-   * 直近のアイテム取得からこのクリック数が経つと、次のアイテムが 1 つ出現する。
-   * クリック自体が「燃料」を作るわけではなく、単に「このペースでアイテムが供給される」
-   * という供給間隔。1分(20 items)=180 clicks、30分(600 items)=5400 clicks 相当。
+   * アイテム取得から次のアイテム出現までのクリック数。`chunkAtE` 分の atk.e ジャンプを
+   * このクリック数で按分するので「アイテム取得後の伸び」が均される。
    */
   CLICK_BUDGET_PER_ITEM: 9,
 } as const;
