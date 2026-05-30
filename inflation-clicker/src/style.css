@@ -235,6 +235,15 @@ body {
   100% { filter: brightness(1); }
 }
 
+/* 命数のルビ（読み仮名）：ゲーム内の命数表示に付加する */
+ruby {
+  ruby-align: center;
+}
+ruby rt {
+  font-size: 0.5em;
+  opacity: 0.6;
+}
+
 /* アイテム取得時の軽い画面シェイク */
 .shake {
   animation: shake 0.3s ease-in-out;

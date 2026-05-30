@@ -307,6 +307,29 @@ export function formatNumber(value: BigNum, type: FormatType, kanjiUnits = COMPO
   return `${cleanM} × 10^${formatExp(e)}`;
 }
 
+// 命数名→読み仮名のマップ（長い名前を先にマッチさせて部分一致を防ぐ）
+const _rubyEntries = [...kanjiUnits, ...joUnits]
+  .map(({ name, reading }) => ({ name, reading }))
+  .sort((a, b) => b.name.length - a.name.length);
+
+const _rubyPattern = new RegExp(
+  _rubyEntries.map(({ name }) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  'g',
+);
+
+const _rubyMap = new Map(_rubyEntries.map(({ name, reading }) => [name, reading]));
+
+/**
+ * formatNumber（kanji）の出力に含まれる命数名を <ruby> タグでラップして読み仮名を付ける。
+ * DOM の innerHTML に渡す用途を想定。命数名以外の文字は変更しない。
+ */
+export function addRuby(text: string): string {
+  return text.replace(_rubyPattern, (match) => {
+    const reading = _rubyMap.get(match)!;
+    return `<ruby>${match}<rt>${reading}</rt></ruby>`;
+  });
+}
+
 /** 経過秒を mm:ss（1 時間以上は h:mm:ss）にする。負値・NaN は 0 扱い。 */
 export function formatTime(sec: number): string {
   const s = Number.isFinite(sec) && sec > 0 ? Math.floor(sec) : 0;

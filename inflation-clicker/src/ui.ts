@@ -1,6 +1,6 @@
 import { BigNum } from './bignum';
 import { difficultyConfigs, difficultyOrder, type Difficulty } from './config';
-import { formatNumber, formatTime, kanjiUnits, joUnits } from './format';
+import { formatNumber, formatTime, addRuby, kanjiUnits, joUnits } from './format';
 import { state } from './state';
 
 export interface UICallbacks {
@@ -178,7 +178,7 @@ function fillResult(): void {
   // 総ダメージ＝累積ダメージ。撃破時点では damageE >= maxHp.e。
   const total = bigNumFromLog10(state.damageE);
   const damageEl = $('clearedDamage');
-  damageEl.textContent = formatNumber(total, 'kanji');
+  damageEl.innerHTML = addRuby(formatNumber(total, 'kanji'));
   $('clearedDamageSci').textContent = formatNumber(total, 'sci');
   fitText(damageEl);
 
@@ -191,17 +191,17 @@ function fillResult(): void {
   $('clearedItems').textContent = `${state.itemsCollected} / ${cfg.totalItems}`;
 
   const atkEl = $('clearedAtk');
-  atkEl.textContent = formatNumber(state.atk, 'kanji');
+  atkEl.innerHTML = addRuby(formatNumber(state.atk, 'kanji'));
   fitText(atkEl);
 
   const maxHitEl = $('clearedMaxHit');
-  maxHitEl.textContent = state.maxHit.isZero() ? '0' : formatNumber(state.maxHit, 'kanji');
+  maxHitEl.innerHTML = state.maxHit.isZero() ? '0' : addRuby(formatNumber(state.maxHit, 'kanji'));
   fitText(maxHitEl);
 
   // 平均 DPS = totalDamage / elapsedTime。log10 空間で引いて BigNum 化。
   const dps = bigNumFromLog10(state.damageE - Math.log10(seconds));
   const dpsEl = $('clearedDps');
-  dpsEl.textContent = formatNumber(dps, 'kanji');
+  dpsEl.innerHTML = addRuby(formatNumber(dps, 'kanji'));
   fitText(dpsEl);
 }
 
@@ -245,7 +245,7 @@ export function updateStats(): void {
 
   if (state.atk.e !== lastAtkE) {
     const atkVal = $('atkVal');
-    atkVal.textContent = formatNumber(state.atk, 'kanji');
+    atkVal.innerHTML = addRuby(formatNumber(state.atk, 'kanji'));
     $('atkSci').textContent = formatNumber(state.atk, 'sci');
     fitText(atkVal);
     lastAtkE = state.atk.e;
