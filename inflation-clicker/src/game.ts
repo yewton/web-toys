@@ -44,6 +44,8 @@ import {
   setPowering,
   setHardening,
   setEnemyHit,
+  triggerEnemyHit,
+  setRandomEnemyEmoji,
   playPowerUp,
   playDefeat,
   showItemAt,
@@ -83,7 +85,11 @@ let hitImpulse = 0;
 let lastHitQ = -1;
 // 撃破演出の再生中フラグ（この間は攻撃を受け付けず、戻る画面もまだ出さない）
 let defeatPlaying = false;
-const DEFEAT_MS = 900;
+// KH 風スローモーションを含む撃破演出の総尺。CSS の defeatBurst (5s) より気持ち長くとる。
+const DEFEAT_MS = 5200;
+// 撃破中のパーティクル時間倍率（< 1 で「スローモーション」になる）。
+// かなり下げて、スパークが空中を漂うように見せる（5 秒の演出と歩調を合わせる）。
+const DEFEAT_TIME_SCALE = 0.12;
 
 /** displayedSegments / totalSegments を hp.e から計算して GaugeState を生成。 */
 function makeGauge(hpE: number): GaugeState {
@@ -168,6 +174,23 @@ function setupDevTools(): void {
   setLabel();
   autoBtn.addEventListener('click', () => autoClick(!autoTimer));
   document.body.appendChild(autoBtn);
+
+  // クリア直前ジャンプ：撃破演出の確認用。atk.e と damageE を「あと 1 クリックで超える」位置に揃える。
+  // damageE は hp.e - 0.05 まで上げ、atk.e も同水準にして 1 タップで確実に超える状態を作る。
+  const finishBtn = document.createElement('button');
+  finishBtn.style.cssText =
+    'position:fixed;right:140px;bottom:8px;z-index:9999;padding:6px 10px;border-radius:8px;' +
+    'background:#111827;color:#fcd34d;border:1px solid #f59e0b66;font-size:12px;opacity:.85';
+  finishBtn.textContent = '⚡ クリア直前';
+  finishBtn.addEventListener('click', () => {
+    if (state.screen !== 'playing') return;
+    const cfg = difficultyConfigs[state.difficulty];
+    const eNear = Math.max(state.atk.e, cfg.hp.e - 1);
+    state.atk = new BigNum(1, eNear);
+    state.atkTargetE = eNear;
+    state.damageE = cfg.hp.e - 0.05;
+  });
+  document.body.appendChild(finishBtn);
 
   (window as unknown as { __clicker: unknown }).__clicker = {
     state,
@@ -266,9 +289,11 @@ function loop(now: number): void {
     }
   }
 
-  // ダメージ数値パーティクル：あるときだけ更新、無くなった最初のフレームで一度だけ消す
+  // ダメージ数値パーティクル：あるときだけ更新、無くなった最初のフレームで一度だけ消す。
+  // 撃破演出中は dt を絞ってスローモーションにする＝爆ぜたスパークが KH 風にゆっくり広がる。
   if (particles.length > 0) {
-    stepParticles(dt);
+    const stepDt = defeatPlaying ? dt * DEFEAT_TIME_SCALE : dt;
+    stepParticles(stepDt);
     fxCtx.setTransform(fxDpr, 0, 0, fxDpr, 0, 0);
     fxCtx.clearRect(0, 0, fxCssW, fxCssH);
     drawParticles(fxCtx, fxCssW);
@@ -295,6 +320,7 @@ function startGame(diff: Difficulty): void {
   gauge = makeGauge(difficultyConfigs[diff].hp.e);
   clearParticles();
   resetTransientFx();
+  setRandomEnemyEmoji();
   playSeconds = 0;
   lastSaveAt = performance.now();
   state.screen = 'playing';
@@ -366,6 +392,7 @@ function handleAttack(x: number, y: number): void {
   state.totalClicks++;
   spawnDamage(x, y, dmg);
   spawnHitSpark(x, y);
+  triggerEnemyHit();
   hitImpulse = 1;
 
   // アイテム供給：取得から CLICK_BUDGET_PER_ITEM クリック貯まったら 1 つ出す。

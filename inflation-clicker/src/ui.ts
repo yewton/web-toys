@@ -20,12 +20,14 @@ let enemyEl!: HTMLElement;
 let atkPanel!: HTMLElement;
 let saveStatusEl!: HTMLElement;
 let killFlash!: HTMLElement;
+let slowMoVeil!: HTMLElement;
 let backBtn!: HTMLButtonElement;
 
 let saveStatusTimer = 0;
 let powerUpTimer = 0;
 let armTimer = 0;
 let shakeTimer = 0;
+let hitVibeTimer = 0;
 let powering = false;
 // updateStats のダーティチェック用（毎フレームの DOM 書き込み・フォーマットを避ける）
 let lastAtkE = NaN;
@@ -45,6 +47,7 @@ export function setupUI(cb: UICallbacks): void {
   atkPanel = $('atkPanel');
   saveStatusEl = $('saveStatus');
   killFlash = $('killFlash');
+  slowMoVeil = $('slowMoVeil');
   backBtn = $('backBtn') as HTMLButtonElement;
 
   buildMenu(cb);
@@ -137,6 +140,9 @@ export function renderScreen(): void {
     enemyEl.classList.remove('defeated');
     killFlash.classList.remove('show');
   }
+  // スローモーションの暗転は撃破演出中のみ。結果画面 / メニュー / プレイへの切替で必ず外す
+  // （結果画面に切替えた瞬間は #slowMoVeil 側の transition で滑らかにフェードアウトする）。
+  slowMoVeil.classList.remove('show');
   if (state.screen === 'cleared') {
     fillResult();
     setHardening(0);
@@ -159,6 +165,9 @@ function fillResult(): void {
   const cfg = difficultyConfigs[state.difficulty];
   const courseEl = document.getElementById('clearedCourse');
   if (courseEl) courseEl.textContent = cfg.name;
+
+  const resultEnemyEl = document.getElementById('resultEnemy');
+  if (resultEnemyEl) resultEnemyEl.textContent = enemyEl.textContent;
 
   $('clearedTime').textContent = formatTime(state.elapsedTime);
 
@@ -192,13 +201,15 @@ function fillResult(): void {
   fitText(dpsEl);
 }
 
-/** 撃破演出：アイテム/バッジを消し、敵を弾けさせ、画面を一瞬フラッシュ。 */
+/** 撃破演出：アイテム/バッジを消し、敵を弾けさせ、画面を一瞬フラッシュ＋スローモーションの暗転。 */
 export function playDefeat(): void {
   hideItem();
   enemyEl.classList.add('defeated');
   killFlash.classList.remove('show');
   void killFlash.offsetWidth;
   killFlash.classList.add('show');
+  // 中央以外を落として演出にフォーカス。結果画面へ切替わるときに renderScreen 側で外す。
+  slowMoVeil.classList.add('show');
 }
 
 /**
@@ -276,9 +287,28 @@ export function setHardening(level: number): void {
   enemyEl.style.setProperty('--harden', Math.max(0, Math.min(1, level)).toFixed(2));
 }
 
-/** ヒット時の敵リコイル量（0〜1）。transform のみ動かすので軽い。 */
+const ENEMY_EMOJIS = ['🧌', '🗿', '🦹', '🐉', '🦖', '🐊', '🦂', '🐦‍🔥'];
+
+export function setRandomEnemyEmoji(): void {
+  enemyEl.textContent = ENEMY_EMOJIS[Math.floor(Math.random() * ENEMY_EMOJIS.length)];
+}
+
+/** ヒット時の敵リコイル量（0〜1）。transform のみ動かすので軽い。v=0 のとき振動クラスも除去。 */
 export function setEnemyHit(v: number): void {
+  if (v === 0) {
+    window.clearTimeout(hitVibeTimer);
+    enemyEl.classList.remove('hit-vibe');
+  }
   enemyEl.style.setProperty('--hit', Math.max(0, Math.min(1, v)).toFixed(2));
+}
+
+/** ヒット時の振動＋フラッシュ演出を起動する。連打でもリセットして再生。 */
+export function triggerEnemyHit(): void {
+  enemyEl.classList.remove('hit-vibe');
+  void enemyEl.offsetWidth;
+  enemyEl.classList.add('hit-vibe');
+  window.clearTimeout(hitVibeTimer);
+  hitVibeTimer = window.setTimeout(() => enemyEl.classList.remove('hit-vibe'), 350);
 }
 
 /** アイテム取得時のバフ演出：攻撃パネルを一瞬強く発光させる（文字は出さない）。 */
