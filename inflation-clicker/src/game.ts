@@ -419,6 +419,14 @@ function handleAttack(x: number, y: number): void {
 /** 撃破演出：敵が弾け、画面フラッシュ＋スパーク爆発のあと「撃破」画面を出す。 */
 function triggerDefeat(): void {
   defeatPlaying = true;
+  // 最終アイテムが画面上に出ている状態で撃破した場合は取得済みとして扱う。
+  // 最終アイテムは handleItem の即出現保証で常に提示されるが、
+  // タップより先に最後の一撃が入った場合の安全網。
+  const cfg = difficultyConfigs[state.difficulty];
+  if (state.itemAvailable && state.itemsCollected === cfg.totalItems - 1) {
+    state.itemsCollected = cfg.totalItems;
+    state.itemAvailable = false;
+  }
   // この run は終了。再開用セーブを消す（死んだ 'playing' を Continue で再開させない）
   clearSave();
 
@@ -449,7 +457,11 @@ function handleItem(x: number, y: number): void {
   // 段階的に追従するので、取得直後にゲージが急に削れず、その後の数タップで滑らかに削れていく。
   const chunk = chunkAtE(state.atkTargetE);
   state.atkTargetE = Math.min(cfg.hp.e, state.atkTargetE + chunk);
-  state.clicksSinceItem = 0;
+  // N-1 個目を取得した直後は clicksSinceItem を BUDGET に揃えることで、
+  // 次の handleAttack 呼び出し（defeat チェックより前）でスポーン条件が即座に成立し
+  // 最終アイテムを必ず提示できる。通常はリセット (0)。
+  state.clicksSinceItem =
+    state.itemsCollected === cfg.totalItems - 1 ? ATTACK.CLICK_BUDGET_PER_ITEM : 0;
 
   // バフ演出：取得地点からエメラルドの光＋攻撃パネルの強発光（文字なし）
   spawnPowerUp(x, y);
