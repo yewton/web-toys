@@ -59,6 +59,7 @@ pids
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+!.claude/rules/
 .claude/settings.local.json
 memory/
 !.claude/worktrees/
