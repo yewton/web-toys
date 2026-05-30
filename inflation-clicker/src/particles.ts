@@ -1,5 +1,5 @@
 import { BigNum } from './bignum';
-import { formatNumber } from './format';
+import { formatNumber, splitForRuby } from './format';
 
 /** クリックごとに飛び出すダメージ数値のパーティクル。 */
 export interface DamageParticle {
@@ -18,6 +18,10 @@ export interface DamageParticle {
   dispSize?: number;
   /** 収めたあとのテキスト半幅（x クランプ用） */
   halfW?: number;
+  /** kanji を命数名で分割したセグメント（canvas ルビ描画用） */
+  rubySegs?: { text: string; reading?: string }[];
+  /** dispSize 確定後の各セグメント幅（x 位置計算用） */
+  rubySegWidths?: number[];
   /** スパーク（文字ではなく小さな光点として描く：撃破／ヒット演出） */
   spark?: boolean;
   /** ヒットのインパクトリング（広がる輪として描く） */
@@ -50,6 +54,7 @@ export function spawnDamage(x: number, y: number, dmg: BigNum): void {
     nums--;
   }
   if (particles.length >= MAX_PARTICLES) particles.shift();
+  const kanjiStr = formatNumber(dmg, 'kanji', 3);
   particles.push({
     x: x + (Math.random() - 0.5) * 96,
     // 敵の上側の暗い空間に出す。明るい本体に白文字が重なって白飛び＝読みづらくなるのを避ける。
@@ -59,9 +64,11 @@ export function spawnDamage(x: number, y: number, dmg: BigNum): void {
     life: 1,
     size,
     // 複合漢数字を復活（先頭から最大 3 単位を連結：998兆999億9999万 のように）。
-    kanji: formatNumber(dmg, 'kanji', 3),
+    kanji: kanjiStr,
     // 下に小さく科学表記を添えて、馴染みのない命数でも大きさが伝わるようにする。
     sci: formatNumber(dmg, 'sci'),
+    // 命数名ごとに分割してルビ描画用セグメントを保持する。
+    rubySegs: splitForRuby(kanjiStr),
   });
 }
 
@@ -174,7 +181,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, screenW: number): v
 
   // 画面幅が変わったら、生存中の数値のフィット結果を作り直させる
   if (screenW !== lastFitScreenW) {
-    for (const p of particles) p.dispSize = undefined;
+    for (const p of particles) { p.dispSize = undefined; p.rubySegWidths = undefined; }
     lastFitScreenW = screenW;
   }
 
@@ -202,28 +209,77 @@ export function drawParticles(ctx: CanvasRenderingContext2D, screenW: number): v
   ctx.strokeStyle = '#000';
   for (const p of particles) {
     if (p.ring || p.spark) continue;
+
+    const segs = p.rubySegs;
+    const hasRuby = segs?.some((s) => s.reading);
+
     // 初回だけ計測して、画面幅に収まる表示サイズと半幅を決める
     if (p.dispSize === undefined) {
       ctx.font = baseFont(p.size);
-      const w = ctx.measureText(p.kanji).width;
-      p.dispSize = w > maxW ? p.size * (maxW / w) : p.size;
-      p.halfW = Math.min(w, maxW) / 2;
+      if (segs) {
+        let totalW = 0;
+        segs.forEach((s) => { totalW += ctx.measureText(s.text).width; });
+        p.dispSize = totalW > maxW ? p.size * (maxW / totalW) : p.size;
+        ctx.font = baseFont(p.dispSize);
+        let sw = 0;
+        p.rubySegWidths = segs.map((s) => { const w = ctx.measureText(s.text).width; sw += w; return w; });
+        p.halfW = sw / 2;
+      } else {
+        const w = ctx.measureText(p.kanji).width;
+        p.dispSize = w > maxW ? p.size * (maxW / w) : p.size;
+        p.halfW = Math.min(w, maxW) / 2;
+      }
     }
+
     const half = p.halfW ?? 0;
     const x = Math.max(FX_MARGIN + half, Math.min(screenW - FX_MARGIN - half, p.x));
 
     // 寿命の大半は不透明（敵のオーラに重なっても色が混ざらず＝色が転ばず読める）、最後だけ素早く消える。
     ctx.globalAlpha = p.life > 0.25 ? 1 : Math.max(0, p.life) / 0.25;
-    // 黒フチで背景から分離（コントラスト確保）。太すぎると字が潰れるので控えめに。
-    ctx.lineWidth = Math.max(2.5, p.dispSize * 0.15);
-    ctx.font = baseFont(p.dispSize);
-    ctx.strokeText(p.kanji, x, p.y);
-    // 純白はギラつくので、ほんのり暖色を含むオフホワイトにする。
-    ctx.fillStyle = '#fff7ea';
-    ctx.fillText(p.kanji, x, p.y);
+
+    if (hasRuby && segs && p.rubySegWidths) {
+      // ルビあり：命数名ごとに分割して描画し、その上に読み仮名をのせる
+      const ds = p.dispSize;
+      const rubySize = Math.max(8, ds * 0.4);
+      const rubyY = p.y - ds * 0.88; // 漢字の上
+      let segX = x - half;
+      ctx.textAlign = 'left';
+      for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i]!;
+        const segW = p.rubySegWidths[i]!;
+        // 漢字本体
+        ctx.lineWidth = Math.max(2.5, ds * 0.15);
+        ctx.font = baseFont(ds);
+        ctx.strokeText(seg.text, segX, p.y);
+        ctx.fillStyle = '#fff7ea';
+        ctx.fillText(seg.text, segX, p.y);
+        // ルビ（読み仮名）
+        if (seg.reading) {
+          ctx.font = `600 ${rubySize}px "Arial", sans-serif`;
+          ctx.lineWidth = Math.max(1.5, rubySize * 0.12);
+          const cx = segX + segW / 2;
+          ctx.textAlign = 'center';
+          ctx.strokeText(seg.reading, cx, rubyY);
+          ctx.fillStyle = 'rgba(255,247,234,0.75)';
+          ctx.fillText(seg.reading, cx, rubyY);
+          ctx.textAlign = 'left';
+        }
+        segX += segW;
+      }
+      ctx.textAlign = 'center';
+    } else {
+      // ルビなし：従来どおり 1 回の fillText
+      ctx.textAlign = 'center';
+      ctx.lineWidth = Math.max(2.5, p.dispSize * 0.15);
+      ctx.font = baseFont(p.dispSize);
+      ctx.strokeText(p.kanji, x, p.y);
+      ctx.fillStyle = '#fff7ea';
+      ctx.fillText(p.kanji, x, p.y);
+    }
 
     // 漢数字の下に科学表記を小さく添える（馴染みのない命数でも大きさが分かるように）。
     if (p.sci) {
+      ctx.textAlign = 'center';
       const sciSize = Math.max(11, p.dispSize * 0.42);
       const sciY = p.y + p.dispSize * 0.62;
       ctx.font = `600 ${sciSize}px "Arial", sans-serif`;

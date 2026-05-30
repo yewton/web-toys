@@ -330,6 +330,22 @@ export function addRuby(text: string): string {
   });
 }
 
+/**
+ * formatNumber（kanji）の出力を命数名の境界でセグメントに分割する（canvas ruby 描画用）。
+ * 命数名セグメントには reading が付き、その他は reading が undefined になる。
+ */
+export function splitForRuby(text: string): { text: string; reading?: string }[] {
+  const result: { text: string; reading?: string }[] = [];
+  let lastIdx = 0;
+  for (const match of text.matchAll(_rubyPattern)) {
+    if (match.index! > lastIdx) result.push({ text: text.slice(lastIdx, match.index) });
+    result.push({ text: match[0], reading: _rubyMap.get(match[0]) });
+    lastIdx = match.index! + match[0].length;
+  }
+  if (lastIdx < text.length) result.push({ text: text.slice(lastIdx) });
+  return result;
+}
+
 /** 経過秒を mm:ss（1 時間以上は h:mm:ss）にする。負値・NaN は 0 扱い。 */
 export function formatTime(sec: number): string {
   const s = Number.isFinite(sec) && sec > 0 ? Math.floor(sec) : 0;
