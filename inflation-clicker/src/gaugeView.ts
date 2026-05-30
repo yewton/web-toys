@@ -1,8 +1,14 @@
-import { COLORS, GAUGE } from './config';
+import { COLORS, DISPLAY_CAP_BOXES, GAUGE } from './config';
 import { finalLayer, sliceGauge, type GaugeState } from './hpGauge';
 
 // KH 風の傾き（水平シア。tanθ 相当）
 const SKEW = -0.12;
+
+// 箱サイズの基準本数 ＝ `DISPLAY_CAP_BOXES - 1` ＝ 摩婆羅コースの箱数（31）。
+// どのコースでもこの本数を基準に boxW を算出することで、箱の見た目サイズを統一する。
+// 短いコース（無量大数=6 箱）は右寄せで余白、cap に到達するコースは箱数も同じになるので
+// バー幅にちょうど収まる。
+const REF_BOX_COUNT_FOR_SIZING = Math.max(1, DISPLAY_CAP_BOXES - 1);
 
 type FillStyle = string | CanvasGradient;
 
@@ -121,25 +127,37 @@ export function drawGauge(
 
   // --- 残ゲージ箱 ---
   // 箱は「現在削っているゲージを除いた残り本数」＝合計 displayedSegments-1 個ぶん。
-  // 無量大数=6個 / 摩婆羅=31個 / 界分=52個 / 不可説不可説転以上=59個（コンベア cap）。
+  // 無量大数=6 / 摩婆羅=31 / 界分以上=31（cap = DISPLAY_CAP_BOXES − 1 に頭打ち）。
   const boxCount = Math.max(0, g.displayedSegments - 1);
   if (boxCount === 0) return;
 
   const boxTop = barY + barH + 6;
   const boxH = Math.max(8, Math.min(12, cssH - boxTop - 2));
   const gap = 2;
-  // 箱サイズは行全体（boxCount 個）がバー幅にちょうど収まるよう自動調整、
-  // 小さすぎる場合は最低 3px、大きすぎる場合は 24px で頭打ち（無量大数の極端な巨大箱を防ぐ）。
-  const boxW = Math.max(3, Math.min(24, (barW - gap * Math.max(0, boxCount - 1)) / boxCount));
+  // 箱サイズは摩婆羅コースの本数を基準に固定。実 boxCount に依存しないので、
+  // 無量大数は右寄せでコンパクトに、界分以上はバー左端から溢れて切れる、という見た目になる。
+  const boxW = Math.max(
+    3,
+    Math.min(
+      24,
+      (barW - gap * Math.max(0, REF_BOX_COUNT_FOR_SIZING - 1)) / REF_BOX_COUNT_FOR_SIZING,
+    ),
+  );
   const slot = boxW + gap;
   const groupW = boxCount * boxW + Math.max(0, boxCount - 1) * gap;
 
-  // コンベアモード（totalSegments > displayedSegments）の場合、右端の箱が canvas right から
-  // 約 50% はみ出すよう、padX 分＋box 半分を offset とする。「まだ続く」を視覚化し、
-  // 新しい箱はそのさらに右からスライドして現れる。
-  const isConveyor = g.totalSegments > g.displayedSegments;
-  const offcanvasOffset = isConveyor ? barX + boxW * 0.5 : 0;
-  // KH スタイル：箱は右寄せ。コンベア時はさらに右へ押し出して画面右の境界を越えさせる。
+  // 「コース自体が cap を超えるか」（レイアウト用）と「現在コンベアフェーズ中か」
+  // （描画ロジック用）を分離する。前者は界分・不可説・グラハム数で常に true。
+  // 後者は consumed が flashStart に届いた時点で false に切り替わり、depletion 描画に移行する。
+  const consumedInt = Math.min(g.totalSegments, Math.floor(Math.max(0, consumed)));
+  const flashStart = Math.max(0, g.totalSegments - g.displayedSegments);
+  const isOverCap = g.totalSegments > g.displayedSegments;
+  const inConveyorPhase = isOverCap && consumedInt < flashStart;
+
+  // コンベアフェーズ中だけ右端の箱を canvas right から 50% 押し出し「まだ続く」を表現。
+  // depletion へ移行した瞬間に offset を 0 に戻すと、その後の左端からの削れ演出が
+  // すべて画面内に収まる（界分の終盤・摩婆羅以下と同じ見え方）。
+  const offcanvasOffset = inConveyorPhase ? barX + boxW * 0.5 : 0;
   const groupX = barX + barW - groupW + offcanvasOffset;
 
   const FLASH = GAUGE.BOX_FLASH_MS;
@@ -150,7 +168,7 @@ export function drawGauge(
   // コンベアアニメ進捗：box[0] の flashAt からの経過で 0→FLASH→FLASH+SLIDE
   let convPhase: 'idle' | 'flash' | 'slide' = 'idle';
   let slideProgress = 0;
-  if (isConveyor) {
+  if (inConveyorPhase) {
     const flashAt0 = g.boxFlashAt[0] ?? 0;
     if (flashAt0 > 0) {
       const dt = now - flashAt0;
@@ -163,8 +181,8 @@ export function drawGauge(
   }
 
   for (let i = 0; i < boxCount; i++) {
-    if (isConveyor) {
-      // --- コンベアモード ---
+    if (inConveyorPhase) {
+      // --- コンベアフェーズ：左端 box[0] が点滅→消失、その他は slide 中に左へ 1 slot シフト ---
       if (i === 0) {
         if (convPhase === 'flash') {
           drawBox(ctx, groupX, boxTop, boxW, boxH, COLORS.boxFlash, 1);
@@ -199,7 +217,9 @@ export function drawGauge(
       continue;
     }
 
-    // --- depletion モード（finite course）：旧来の per-index 動作 ---
+    // --- depletion フェーズ（finite course、または over-cap コースが flashStart を越えた後） ---
+    // 左の index から順に flash → slide で退場。over-cap でも groupX は 0 offset なので、
+    // 左端の box[0] が canvas 内に収まり、赤フラッシュ→スライドが画面内で見える。
     const flashedAt = g.boxFlashAt[i] ?? 0;
     const stillAlive = i >= cleared && flashedAt === 0;
     if (stillAlive) {
@@ -216,7 +236,7 @@ export function drawGauge(
   }
 
   // コンベア slide 中：右端から新しい箱がスライドインして来る
-  if (isConveyor && convPhase === 'slide') {
+  if (inConveyorPhase && convPhase === 'slide') {
     drawBox(
       ctx,
       groupX + (boxCount - slideProgress) * slot,

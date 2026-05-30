@@ -40,8 +40,15 @@ export const GAUGE_DENSITY = {
   INFL_E: 100,
 } as const;
 
-/** 画面に並べる箱の上限（コンベアモードのトリガ）。 */
-export const DISPLAY_CAP_BOXES = 60;
+/**
+ * 画面に並べる箱の上限（コンベアモードのトリガ）。
+ *
+ * 値は「摩婆羅コースの totalSegments」と同じ ≒ 32。1 箱のサイズは `gaugeView` 側でこの本数
+ * (cap − 1 = 31 箱) がバー幅にちょうど収まるよう固定する。これより多い displayedSegments を
+ * 許すと、削れた箱の赤フラッシュ→消滅→左へスライドする演出が画面外で起きてしまうため。
+ * 界分以上は totalSegments > cap となり自動的にコンベアモードに入る。
+ */
+export const DISPLAY_CAP_BOXES = 32;
 
 /**
  * 1 アイテムが atk.e を押し上げる量。`e ≤ INFL_E` までは一定 (= C0)、その先は現在の指数に
@@ -162,8 +169,8 @@ export function totalSegmentsForHp(hpE: number): number {
 }
 
 /**
- * 画面に並べる箱の本数。`totalSegments(hpE)` を DISPLAY_CAP で頭打ちにするだけ。
- * 動的密度の下では、無量大数 ≈ 7 箱、摩婆羅 ≈ 32 箱、界分 ≈ 53 箱、不可説不可説転は cap (60) に達してコンベアに入る。
+ * 画面に並べる箱の本数。`totalSegments(hpE)` を DISPLAY_CAP_BOXES で頭打ちにするだけ。
+ * 動的密度の下では、無量大数 ≈ 7 / 摩婆羅 ≈ 32（= cap）/ 界分以上は cap に達してコンベアに入る。
  */
 export function displayBoxesForHp(hpE: number): number {
   return Math.max(1, Math.min(DISPLAY_CAP_BOXES, totalSegmentsForHp(hpE)));

@@ -5,17 +5,17 @@ import { GAUGE } from './config';
  *
  * 体力は「1 箱 = `expPerBoxAt(e)` のダメージ」として量子化される（density は動的。config.ts 参照）。
  * - `totalSegments`: HP 由来の真の総 segments 数。無量大数≒7 / 摩婆羅≒32 / 界分≒53 / 不可説不可説転≒827。
- * - `displayedSegments`: 画面に並べる本数（cap = DISPLAY_CAP_BOXES = 60）。
+ * - `displayedSegments`: 画面に並べる本数（cap = DISPLAY_CAP_BOXES = 32 ＝ 摩婆羅の totalSegments）。
  * - `consumed`: ここまでに削った segments 数（連続値、`consumedFromDamageE(damageE)`）。
  *
  * 1 クリックで増える `consumed` は per-click 削り量が動的密度で打ち消されるため、コースに
  * 依存せず常に ≒ 1 / (CLICK_BUDGET × ITEMS_PER_BOX) ≒ 1.1% に保たれる。
- *  - 無量大数〜界分: totalSegments ≤ displayedSegments（=cap）なので、開始から箱が
+ *  - 無量大数・摩婆羅: totalSegments ≤ displayedSegments（=cap）なので、開始から箱が
  *    左から削れていく（depletion）。
- *  - 不可説不可説転 以上: totalSegments が cap を超え、`consumed < totalSegments − cap`
- *    の間は箱の本数が cap に張り付いたまま `box[0]` がコンベアサイクル（点滅→消失→復活）で
- *    常時アニメする。Phase B では log スケールなので、巨大 HP でも有限時間でしきい値に到達して
- *    最終的に depletion 入りする。
+ *  - 界分以上: totalSegments が cap を超え、`consumed < totalSegments − cap` の間は箱の本数が
+ *    cap に張り付いたまま `box[0]` がコンベアサイクル（点滅→消失→復活）で常時アニメする。
+ *    Phase B では log スケールなので、巨大 HP でも有限時間でしきい値に到達して最終的に depletion
+ *    入りする（界分は約 40% 経過で depletion へ）。
  */
 export interface GaugeSlice {
   /** 表示上の残り箱数（最前面 bar 1 個＋ row の alive 箱を含む）。`displayedSegments` で頭打ち。 */
