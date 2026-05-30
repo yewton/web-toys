@@ -55,6 +55,10 @@ pids
 # Vite
 *.local
 
+# Temporary files
+tmp/
+code_artifact*.tsx
+
 # Gemini/Claude specific
 .claude/*
 !.claude/settings.json
@@ -62,4 +66,3 @@ pids
 !.claude/rules/
 .claude/settings.local.json
 memory/
-!.claude/worktrees/
