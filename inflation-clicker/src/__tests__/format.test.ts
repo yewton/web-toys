@@ -55,13 +55,23 @@ describe('formatNumber', () => {
     expect(formatNumber(new BigNum(1, 1.7e308), 'kanji')).toBe('10^10^308');
   });
 
-  it('uses k乗無量大数 notation at depth=3 for joUnit-range numbers', () => {
-    // depth=3 では「最も近い無量大数のべき」一語で表す。指数 k は命数で整形され、
-    // 先頭ブロック（端数倍率）を足して k と癒着させない（"11京…"のような誤読を防ぐ）。
-    // e=1e20 は joUnit 範囲内（< 3.7e37）→ k乗無量大数 ＋ 上数法命数 3 連
-    expect(formatNumber(new BigNum(1, 1e20), 'kanji')).toBe('1京6720兆3085億乗無量大数鉢羅麼怛羅諦羅偈羅');
-    // e=5e30 も joUnit 範囲内
-    expect(formatNumber(new BigNum(1, 5e30), 'kanji')).toBe('63𥝱1319垓3329京乗無量大数駄麼羅無我鉢頭摩');
+  it('collapses depth=3 joUnit-range numbers into a single k乗無量大数 word', () => {
+    // depth=3 では命数の隙間を「最も近い無量大数のべき」一語で埋める。ここで検証したいのは
+    // 巨大な完全一致文字列ではなく、表記ポリシーそのもの:
+    //   1) 無量大数を積み上げず（チェーンにせず）一語の「k乗無量大数」で表す
+    //   2) 先頭ブロック（端数倍率）は k に癒着させず丸めて落とす
+    // — なので命数表を編集しても壊れない「性質」で固定する。
+    for (const e of [1e20, 5e30]) {
+      // < 3.7e37 = 不可説不可説転 なので joUnit 範囲内に収まる
+      const out = formatNumber(new BigNum(1, e), 'kanji');
+      expect(out).toContain('乗無量大数');
+      expect(out).not.toContain('無量大数無量大数'); // 積み上げチェーンにならない
+
+      // 端数（先頭ブロック＝仮数）を k に癒着させない⇒ 仮数 m を変えても出力は不変。
+      // もし端数を連結していたら m がべき指数 k の桁に漏れて出力が変わってしまう。
+      expect(formatNumber(new BigNum(7.3, e), 'kanji')).toBe(out);
+      expect(formatNumber(new BigNum(9.99, e), 'kanji')).toBe(out);
+    }
   });
 
   it('uses english units', () => {

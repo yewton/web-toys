@@ -1,9 +1,7 @@
 import { BigNum } from './bignum';
 import {
   difficultyConfigs,
-  ATTACK,
   GAUGE,
-  chunkAtE,
   consumedAtDamage,
   damageEAtConsumed,
   displayBoxesForHp,
@@ -18,6 +16,7 @@ import {
   clearSaveForDiff,
   migrateLegacySave,
 } from './state';
+import { stepAttack, stepItem } from './mechanics';
 import {
   spawnDamage,
   spawnHitSpark,
@@ -94,18 +93,6 @@ const DEFEAT_TIME_SCALE = 0.12;
 /** displayedSegments / totalSegments を hp.e から計算して GaugeState を生成。 */
 function makeGauge(hpE: number): GaugeState {
   return createGaugeState(displayBoxesForHp(hpE), totalSegmentsForHp(hpE));
-}
-
-/**
- * log10(10^a + 10^b)。累積ダメージ damageE への加算に使う。
- * a, b の差が大きいときに 10^大 を保ったまま小さい方を吸収する＝オーバーフローしない。
- */
-function logAdd(a: number, b: number): number {
-  if (!isFinite(a)) return b;
-  if (!isFinite(b)) return a;
-  const max = a >= b ? a : b;
-  const min = a >= b ? b : a;
-  return max + Math.log10(1 + Math.pow(10, min - max));
 }
 
 export function initGame(): void {
@@ -368,42 +355,17 @@ function handleAttack(x: number, y: number): void {
   notifyAttack(gauge, performance.now());
 
   const cfg = difficultyConfigs[state.difficulty];
+  // ゲームプレイ状態遷移は純粋ロジック（mechanics.ts）に委譲。m は 1〜9.99 の乱数。
+  const { dmg, spawnItem, defeated } = stepAttack(state, cfg, 1 + Math.random() * 9);
 
-  // アイテム取得後の徐々ランプ：atk.e を atkTargetE へ「chunkAtE / CLICK_BUDGET_PER_ITEM」歩で
-  // 近づける。step を「現在の atk.e」で評価することで、handleItem 側の chunk と歩幅が一致し、
-  // ちょうど CLICK_BUDGET_PER_ITEM クリックで追いつく。Phase B では chunk が伸びるので step も伸びる。
-  if (state.atk.e < state.atkTargetE) {
-    const step = chunkAtE(state.atk.e) / ATTACK.CLICK_BUDGET_PER_ITEM;
-    state.atk = new BigNum(1, Math.min(state.atkTargetE, state.atk.e + step));
-  }
-
-  // 1 クリックのダメージ：m × 10^atk.e（m は 1〜9.99）。atk.e は上のランプで段階的に上がる。
-  const m = 1 + Math.random() * 9;
-  const dmgExp = state.atk.e + Math.log10(m);
-
-  // 累積ダメージを log10 で加算。HP も指数表現なので、ゲージは「対数グラフ」的に動く。
-  // atk.e が小さい（無アイテム）うちは、巨大な maxHp.e に対する寄与が小さく＝ゲージは
-  // 見た目ほぼ動かない。アイテムで atk.e が桁ごと上がって初めて適切なペースで削れる。
-  state.damageE = logAdd(state.damageE, dmgExp);
-
-  // ダメージ数値の表示（先頭の数字は 1〜9 でばらつく）
-  const dmg = new BigNum(m, state.atk.e);
-  if (dmg.cmp(state.maxHit) > 0) state.maxHit = dmg;
-  state.totalClicks++;
+  // ダメージ数値・スパーク・敵のリコイル（純粋ロジックの結果を受けた演出）
   spawnDamage(x, y, dmg);
   spawnHitSpark(x, y);
   triggerEnemyHit();
   hitImpulse = 1;
 
-  // アイテム供給：取得から CLICK_BUDGET_PER_ITEM クリック貯まったら 1 つ出す。
-  // totalItems の上限まで（理論上は撃破前後で出尽くす）。フェーズ制御はしない。
-  state.clicksSinceItem++;
-  if (
-    !state.itemAvailable &&
-    state.itemsCollected < cfg.totalItems &&
-    state.clicksSinceItem >= ATTACK.CLICK_BUDGET_PER_ITEM
-  ) {
-    state.itemAvailable = true;
+  // 新しいアイテムを出す場合のみ、画面位置（乱数）を決めて表示する。
+  if (spawnItem) {
     state.itemPos = {
       top: `${20 + Math.random() * 60}%`,
       left: `${20 + Math.random() * 60}%`,
@@ -411,7 +373,7 @@ function handleAttack(x: number, y: number): void {
     showItemAt(state.itemPos.top, state.itemPos.left);
   }
 
-  if (state.damageE >= cfg.hp.e) {
+  if (defeated) {
     triggerDefeat();
   }
 }
@@ -448,20 +410,9 @@ function triggerDefeat(): void {
 function handleItem(x: number, y: number): void {
   if (state.screen !== 'playing' || !state.itemAvailable) return;
   const cfg = difficultyConfigs[state.difficulty];
-  state.itemsCollected += 1;
-  state.itemAvailable = false;
+  // 攻撃力目標の押し上げ・アイテムカウント更新は純粋ロジック（mechanics.ts）に委譲。
+  stepItem(state, cfg);
   hideItem();
-
-  // 攻撃力の「目標」指数を 1 アイテム分（= chunkAtE(atkTargetE)）上げる。Phase A では一定 C0、
-  // Phase B では現在指数に比例した量。実際の atk.e は次のタップから handleAttack 内のランプで
-  // 段階的に追従するので、取得直後にゲージが急に削れず、その後の数タップで滑らかに削れていく。
-  const chunk = chunkAtE(state.atkTargetE);
-  state.atkTargetE = Math.min(cfg.hp.e, state.atkTargetE + chunk);
-  // N-1 個目を取得した直後は clicksSinceItem を BUDGET に揃えることで、
-  // 次の handleAttack 呼び出し（defeat チェックより前）でスポーン条件が即座に成立し
-  // 最終アイテムを必ず提示できる。通常はリセット (0)。
-  state.clicksSinceItem =
-    state.itemsCollected === cfg.totalItems - 1 ? ATTACK.CLICK_BUDGET_PER_ITEM : 0;
 
   // バフ演出：取得地点からエメラルドの光＋攻撃パネルの強発光（文字なし）
   spawnPowerUp(x, y);
