@@ -1,6 +1,6 @@
 import { BigNum } from './bignum';
 import { difficultyConfigs, difficultyOrder, type Difficulty } from './config';
-import { formatNumber, formatTime } from './format';
+import { formatNumber, formatTime, kanjiUnits, joUnits } from './format';
 import { state } from './state';
 
 export interface UICallbacks {
@@ -14,6 +14,7 @@ export interface UICallbacks {
 let menuScreen!: HTMLElement;
 let gameScreen!: HTMLElement;
 let clearedOverlay!: HTMLElement;
+let meisuuScreen!: HTMLElement;
 let continueBtn!: HTMLButtonElement;
 let itemEl!: HTMLElement;
 let enemyEl!: HTMLElement;
@@ -49,6 +50,9 @@ export function setupUI(cb: UICallbacks): void {
   killFlash = $('killFlash');
   slowMoVeil = $('slowMoVeil');
   backBtn = $('backBtn') as HTMLButtonElement;
+
+  meisuuScreen = $('meisuuScreen');
+  setupMeisuuScreen();
 
   buildMenu(cb);
   continueBtn.addEventListener('click', () => cb.onContinue());
@@ -330,4 +334,53 @@ export function triggerShake(): void {
   gameScreen.classList.add('shake');
   window.clearTimeout(shakeTimer);
   shakeTimer = window.setTimeout(() => gameScreen.classList.remove('shake'), 300);
+}
+
+function buildMeisuuRows(
+  entries: { e: number; n?: number; name: string; reading: string }[],
+  nameColor: string,
+  expColor: string,
+): string {
+  return entries
+    .map(({ name, reading, e, n }) => {
+      // joUnits（n あり）は 7×2^n 形式、kanjiUnits は 10の何乗かをそのまま表示
+      const expHtml =
+        n !== undefined
+          ? `10^(7·2<sup>${n}</sup>)`
+          : `10<sup>${e.toLocaleString('en')}</sup>`;
+      return (
+        `<div class="flex items-start justify-between gap-3 py-2.5">` +
+        `<div>` +
+        `<span class="${nameColor} font-medium">${name}</span>` +
+        `<span class="text-zinc-600 text-xs ml-1.5">${reading}</span>` +
+        `</div>` +
+        `<span class="${expColor} tabular-nums text-sm shrink-0">${expHtml}</span>` +
+        `</div>`
+      );
+    })
+    .join('');
+}
+
+function setupMeisuuScreen(): void {
+  const list = $('meisuuList');
+
+  // kanjiUnits は降順なので昇順に並べ直して表示する
+  const kanjiRows = buildMeisuuRows([...kanjiUnits].reverse(), 'text-zinc-100', 'text-zinc-400');
+  // joUnits も降順なので昇順に並べ直す
+  const joRows = buildMeisuuRows([...joUnits].reverse(), 'text-amber-200', 'text-amber-400/70');
+
+  list.innerHTML =
+    `<section class="mb-8">` +
+    `<h3 class="text-xs uppercase tracking-widest text-emerald-500/80 mb-0.5">万進法</h3>` +
+    `<p class="text-xs text-zinc-600 mb-3">万の何乗かで表す日本の命数法</p>` +
+    `<div class="divide-y divide-white/5 border-y border-white/5">${kanjiRows}</div>` +
+    `</section>` +
+    `<section>` +
+    `<h3 class="text-xs uppercase tracking-widest text-amber-500/80 mb-0.5">華厳経 上数法</h3>` +
+    `<p class="text-xs text-zinc-600 mb-3">前の命数の2乗ずつ増加する大数（10^(7×2^n)）</p>` +
+    `<div class="divide-y divide-white/5 border-y border-white/5">${joRows}</div>` +
+    `</section>`;
+
+  $('meisuuBtn').addEventListener('click', () => meisuuScreen.classList.remove('hidden'));
+  $('meisuuBackBtn').addEventListener('click', () => meisuuScreen.classList.add('hidden'));
 }
