@@ -9,7 +9,7 @@ Each source file is heavily commented (in Japanese); this rule only captures the
 
 ## Cross-cutting invariants
 
-- **Courses differ ONLY in `hp.e`.** All density/attack tuning is global; everything per-course is derived from HP. The five courses are命数-named after their own HP exponent (which lands exactly on a `joUnits`命数): 無量大数 `10^68` / 摩婆羅 `10^896` / 界分 `10^7168` / 不可説不可説転 `10^(7·2^122)≈10^3.7e37` / グラハム数 `10^1.7e308`. The last two are `extreme: true` (amber warning card, effectively un-clearable).
+- **Courses differ ONLY in `hp.e`.** All density/attack tuning is global; everything per-course is derived from HP. The five courses are命数-named after their own HP exponent (which lands exactly on a `joUnits`命数): 無量大数 `10^68` / 摩婆羅 `10^896` / 界分 `10^7168` / 不可説不可説転 `10^(7·2^122)≈10^3.7e37` / グラハム数 `10^1.7e308`. Only グラハム数 is `extreme: true` (amber warning card in menu); the others use the standard white card.
 - **Gameplay is three-variable and phase-free** (`game.ts`/`state.ts`): `atk.e` (current per-click damage magnitude, moves *only* via the post-item ramp), `atkTargetE` (ramp target, bumped one `chunkAtE` per item), `damageE` (cumulative damage in log10; defeat at `damageE ≥ hp.e`). No fuel / phase gates / idle trickle — items are purely click-count-paced (`ATTACK.CLICK_BUDGET_PER_ITEM = 9` clicks → one spawn, up to `cfg.totalItems`).
 - **Dynamic density keeps the gauge's per-click drain rate course-agnostic** (`config.ts`): `chunkAtE(e) = max(C0=1, e/INFL_E=100)` is the per-item `atk.e` jump; `expPerBoxAt(e) = ITEMS_PER_BOX·chunkAtE(e)`. They grow in lockstep above `INFL_E`, so `consumed`-per-click stays ≈ `1/(CLICK_BUDGET·ITEMS_PER_BOX)` on every course. `consumedFromDamageE` is the closed-form integral `∫ 1/expPerBoxAt de`; `consumedAtDamage(d, hpE)` stretches it so `consumed` lands exactly on `totalSegments` at `damageE = hp.e`.
 - **Damage-number表記 policy** (`format.ts`): 厳密でなくてよいが嘘にならない / 命数で数字の羅列を避ける / 無量大数を無尽蔵に並べない。Any change here must preserve all three.
@@ -24,5 +24,19 @@ Each source file is heavily commented (in Japanese); this rule only captures the
 - **`gaugeView.ts`** — Canvas render of the hpGauge model (**excluded from coverage**, canvas-only). One position-based `drawGauge` for all courses: box size is fixed to `DISPLAY_CAP_BOXES − 1` = 31 (摩婆羅) boxes, so 無量大数 (6 boxes) sits compact on the right and over-cap courses overflow/clip off the **left** edge — communicating "far too long" with no per-course conditionals. Conveyor vs depletion box animation mirrors `advanceGauge`; rendering details are commented in-code.
 - **`particles.ts`** — damage-number particles + spark/ring/burst FX. Real-time decay (~0.6s life, fps-independent), capped (`MAX_PARTICLES = 36`, `MAX_DAMAGE_NUMBERS = 4`). Damage numbers are `formatNumber(dmg, 'kanji', 3)` rendered with **canvas ruby** (`splitForRuby` → 読み仮名 over each命数 name) and a small sci line underneath, drawn in a second pass over the sparks (so emerald power-up sparks can't recolor a number). Node-testable (mock `measureText`/`stroke`).
 - **`ui.ts`** — all DOM wiring. HP is shown **only** by the gauge (no number). `setHardening` / `setPowering` / `setEnemyHit` etc. are text-free visual states. Result/stat readouts (`atk` / `maxHit` / `dps`) use `addRuby(formatNumber(…, 'kanji'))` + `fitText` shrink, with sci companions on the result overlay. Takes `UICallbacks` from `game.ts` (no cycle: `game → ui`, `main → game`).
-- **`game.ts`** — game logic + the single dirty-checked `requestAnimationFrame` loop (stats DOM / gauge canvas / fx canvas each redrawn only on change). Post-item ramp: each click moves `atk.e` toward `atkTargetE` by `chunkAtE(atk.e)/CLICK_BUDGET_PER_ITEM`, stopping when caught up (the "powering" glow is lit exactly during this gap). `setHardening` is **cosmetic only** — darkens a crystalline shell by `damageE/hp.e` (stays near 0 for extreme courses); it is not a gameplay phase. `triggerDefeat` blocks input, plays a ~5.2s slow-mo burst, then reveals the result overlay. DEV-only `window.__clicker` (`setAtkExp` / `setDamageE` / `setConsumed` / `autoClick`) + 自動クリック / クリア直前 buttons, tree-shaken from production.
+- **`game.ts`** — game logic + the single dirty-checked `requestAnimationFrame` loop (stats DOM / gauge canvas / fx canvas each redrawn only on change). Post-item ramp: each click moves `atk.e` toward `atkTargetE` by `chunkAtE(atk.e)/CLICK_BUDGET_PER_ITEM`, stopping when caught up (the "powering" glow is lit exactly during this gap). `setHardening` is **cosmetic only** — darkens a crystalline shell by `damageE/hp.e` (stays near 0 for extreme courses); it is not a gameplay phase. `triggerDefeat` blocks input, plays a ~5.2s slow-mo burst, then reveals the result overlay. DEV-only `window.__clicker` (`state` / `getGauge()` / `particles` / `setAtkExp` / `setDamageE` / `setConsumed` / `autoClick`) + 自動クリック / クリア直前 buttons, tree-shaken from production.
 - **Layout/perf** — `index.html` is a `dvh` flex column (`min-h-0` main) so the footer stays visible on mobile; rapid-tap zoom is suppressed via `touch-action` + a `gesturestart`/`gesturechange`/`gestureend` preventDefault in `main.ts`. With the dirty-checked loop, real-time particle decay on a DPR-2-capped fx canvas, and no continuous CSS animation on large elements, it holds 60fps under 4× CPU throttle. Long numbers shrink to fit (`fitText` for DOM, per-particle font scaling for popups).
+
+## Tests
+
+Unit tests in `src/__tests__/` (Vitest, node environment). Run with `npx vitest run inflation-clicker`.
+
+| File | Covers |
+|---|---|
+| `bignum.test.ts` | 正規化・加減算・比較・log10 |
+| `config.test.ts` | 動的密度（chunk / expPerBox / consumed の往復）・総箱数・アイテム総数 |
+| `format.test.ts` | 複合漢数字 / 上数法命数 / 英語 / 科学表記 / ルビ / 時刻 |
+| `mechanics.test.ts` | 攻撃ランプ・ダメージ加算（logAdd）・アイテム供給・撃破判定 |
+| `hpGauge.test.ts` | position 計算・ゲージ分割・赤残像の追従・箱フラッシュ判定 |
+| `particles.test.ts` | パーティクルの生成・物理・上限・描画（モック ctx） |
+| `state.test.ts` | 難易度別セーブ/ロード・レガシー移行・初期化 |
