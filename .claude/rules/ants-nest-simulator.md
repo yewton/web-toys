@@ -26,7 +26,7 @@ Three Playwright tests live in `tests/`:
 | `ant-nest-regression.spec.ts` | 300,000 | Regression guard: asserts surface-ant mean X stays within ±100 of center; no top-edge stacking |
 | `ant-nest-evolution.spec.ts` | 25,000 | Captures 5 timestamped screenshots (5k/10k/15k/20k/25k) for time-series visual review |
 
-- Port defaults to **5173**; set `PORT=5174` to avoid conflicts with a running dev server
+- Port defaults to **5173**; set `PORT=5174` to avoid conflicts with a running dev server (e.g. start one with `scripts/dev.sh up 5174`, then run the test against it — see CLAUDE.md → Verification utilities)
 - Screenshots are saved to `tests/screenshots/` (in `.gitignore`)
 - `ant-nest-visual.spec.ts` requires `claude` CLI in PATH; the other two do not
 - `__antSimAdvance(n)` and `__antSimState` are exposed on `window` by `main.ts` for test use

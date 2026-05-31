@@ -36,6 +36,22 @@ npm run test:visual  # visual E2E test (Playwright + Claude image evaluation)
 
 CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` → `build`.
 
+## Verification utilities
+
+For manual verification (running the app, checking animations/visuals), **use these instead of writing throwaway `npm run dev &` / `pkill -f vite` / `ps`/`grep` / scratch scripts** — they are pre-approved in `.claude/settings.json`, so they don't trigger permission prompts:
+
+```bash
+scripts/dev.sh up [port]          # start vite detached (default 5173), idempotent, waits for HTTP 200
+scripts/dev.sh down [port|all]    # stop managed server(s) by pid/process-group (no blind pkill)
+scripts/dev.sh status             # list managed servers (port / pid / HTTP state)
+scripts/dev.sh logs [port]        # tail tmp/dev-<port>.log
+scripts/dev.sh url [app] [port]   # print an app URL (app: clicker | ants | solitaire)
+scripts/dev.sh shot <path|url> [out.png] [--full] [--wait ms] [--size WxH]  # static screenshot via Playwright chromium
+```
+
+- Lifecycle state lives in `tmp/` (`dev-<port>.pid`, `dev-<port>.log`; gitignored). Always `scripts/dev.sh down all` when finished.
+- For **animation / interactive visual checks**, drive the running server with the **chrome-devtools MCP** server (`navigate_page` / `take_screenshot` / `evaluate_script` / `wait_for`), allowed at server level in `.claude/settings.json`.
+
 ## CI / Supply chain
 
 - **`.github/workflows/ci.yml`** — runs `npm ci → npm audit --audit-level=high → typecheck → test --coverage → build` on every push and PR
