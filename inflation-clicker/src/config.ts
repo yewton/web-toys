@@ -144,7 +144,7 @@ export const difficultyConfigs: Record<Difficulty, DifficultyConfig> = {
   // 4 つの本コース：到達命数で命名。所要時間は INFL_E=100 の曲線における目安。
   muryotaisu: course('無量大数 コース', '万進法の最果てまで。サクッと 1 分。',                       68),
   mabara:     course('摩婆羅 コース',   '上数法に踏み入る。そこそこ 5 分。',                         896),
-  kaibun:     course('界分 コース',     '上数法の終端まで。じっくり 8 分。',                         7168),
+  kaibun:     course('界分 コース',     '上数法を駆け上がる。じっくり 8 分。',                       7168),
   fukasetsu:  course('不可説不可説転 コース', '華厳経の象徴的命数。極限 2 時間。',                    7 * Math.pow(2, 122)), // = 不可説不可説転の正確な指数
   // フレーバー枠（事実上クリア不能ではないが、文字通り 1 日張り付くプレイ）
   graham:     course('グラハム数 コース', '記号上の到達点。連打で 1 週間級。本当にやる？', 1.7e308, true),
