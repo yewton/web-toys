@@ -124,3 +124,12 @@ npx vitest run inflation-clicker   # このアプリのみ
 ```
 
 `game.ts` には `import.meta.env.DEV` ガード下でのみ `window.__clicker`（`state` / `getGauge()` / `setAtkExp` / `setDamageE` / `setConsumed` / `autoClick`）と自動クリック・クリア直前ボタンを公開しており、開発時に各状態を手早く確認できる。本番ビルドでは tree-shake されて消える。
+
+## 参考資料
+
+| サイト | 用途 |
+|---|---|
+| [無量大数ナビ（muryotaisu.kazoekata.com）](https://muryotaisu.kazoekata.com/) | 万進法の命数（万〜無量大数）および不可説不可説転までの一覧・読み |
+| [大きな数字の単位（key-performance.jp）](https://key-performance.jp/numbers/) | 漢数字体系・仏教由来の大数・西洋の大数の体系的な解説 |
+| [数の単位 — 素数2357（2357.aimary.com）](https://2357.aimary.com/unit.html) | 命数の読み・値・グラハム数等の対照表 |
+| Kingdom Hearts シリーズ（Square Enix） | HP ゲージのデザイン（分割バー・色のめくり・スローモーション撃破演出）のインスピレーション |
