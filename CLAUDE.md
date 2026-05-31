@@ -20,6 +20,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Per-app internals and test conventions live in path-scoped rules under `.claude/rules/` (loaded only when you work with matching files): `inflation-clicker.md`, `ants-nest-simulator.md`, `solitaire-cascade.md`, `testing.md`.
 
+**Rules authoring policy**: rules must contain only **cross-file constraints and non-obvious design decisions** — things that cannot be inferred from reading a single source file. Do NOT put in rules:
+- Per-file summaries (source files are heavily commented)
+- Anything that duplicates source comments
+- Test file lists (file names make coverage targets self-evident)
+
+The goal is zero dual-maintenance: if a rule entry would need updating every time the code changes, it belongs in the code comment, not the rule.
+
 ## Commands
 
 ```bash
