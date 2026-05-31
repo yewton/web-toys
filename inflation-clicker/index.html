@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>インフレクリッカー</title>
+  <meta name="description" content="桁を上げて、天文学的な敵HPを削り切るクリッカー">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="インフレクリッカー">
+  <link rel="manifest" href="/inflation-clicker/manifest.json">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased select-none">
+
+  <!-- ===== メニュー ===== -->
+  <div id="menuScreen" class="h-dvh overflow-y-auto flex flex-col items-center px-6 py-10">
+    <div class="my-auto w-full max-w-sm">
+      <h1 class="text-4xl font-bold tracking-tight text-zinc-50">インフレクリッカー</h1>
+      <p class="mt-2 text-zinc-500">桁を上げて、削り切る。</p>
+
+      <div id="difficultyList" class="mt-10 flex flex-col gap-3"></div>
+
+      <div class="mt-8 text-center">
+        <button id="meisuuBtn"
+                class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors underline underline-offset-2">
+          命数一覧
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ゲーム本体 ===== -->
+  <div id="gameScreen" class="hidden h-dvh flex flex-col overflow-hidden">
+
+    <!-- ヘッダー：難易度・時間・敵HP残り・ゲージ -->
+    <header class="flex-none px-4 pt-3 pb-4 border-b border-white/5">
+      <div class="w-full max-w-3xl mx-auto">
+        <div class="flex items-center justify-between text-sm text-zinc-500">
+          <span id="diffName" class="font-medium text-zinc-400"></span>
+          <div class="flex items-center gap-3 tabular-nums">
+            <span id="saveStatus" class="text-emerald-400/80 text-xs"></span>
+            <span id="timerVal">00:00</span>
+            <button id="resetBtn" class="text-zinc-500 hover:text-zinc-200 transition-colors" title="タイトルへ">✕</button>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <canvas id="gaugeCanvas"></canvas>
+        </div>
+      </div>
+    </header>
+
+    <!-- メイン：敵・アイテム -->
+    <main id="arena" class="flex-1 min-h-0 relative flex items-center justify-center overflow-hidden cursor-pointer">
+      <div id="enemy" class="enemy-figure text-[100px] sm:text-[150px] md:text-[190px] leading-none">🧌</div>
+
+      <div id="item" class="hidden absolute z-40 cursor-pointer p-4 hover:scale-110 transition-transform">
+        <div class="relative flex items-center justify-center">
+          <div class="absolute w-20 h-20 rounded-full bg-emerald-300/30 animate-ping"></div>
+          <span class="text-6xl z-10 drop-shadow-[0_0_14px_rgba(52,211,153,0.8)]"></span>
+        </div>
+      </div>
+    </main>
+
+    <!-- フッター：攻撃力 -->
+    <footer class="flex-none safe-bottom px-4 pt-4 border-t border-white/5">
+      <div id="atkPanel" class="w-full max-w-3xl mx-auto rounded-lg px-4 py-3 bg-white/[0.03] border border-white/5">
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="text-[11px] uppercase tracking-widest text-emerald-500/80 shrink-0">Attack</span>
+          <span id="atkSci" class="text-xs text-zinc-600 tabular-nums truncate"></span>
+        </div>
+        <div id="atkVal" class="text-xl sm:text-2xl md:text-3xl font-semibold text-emerald-300 tabular-nums leading-tight truncate"></div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ===== 撃破結果（戻るボタンは画面下端＝連打ゾーンから離す） ===== -->
+  <div id="clearedOverlay"
+       class="hidden fixed inset-0 z-40 flex flex-col items-center px-6 bg-zinc-950/85 backdrop-blur-sm overflow-y-auto">
+    <div class="my-auto w-full max-w-sm py-8">
+      <div class="text-center">
+        <div id="resultEnemy" class="defeated-figure text-5xl mb-3 select-none" aria-hidden="true">👿</div>
+        <div class="text-xs uppercase tracking-[0.3em] text-emerald-500/80">Defeated</div>
+        <h2 class="mt-1 text-4xl font-bold tracking-tight text-zinc-50">撃破</h2>
+        <div id="clearedCourse" class="mt-1 text-xs text-zinc-500"></div>
+      </div>
+
+      <!-- 主要ステータス：所要時間 / 総ダメージ -->
+      <div class="mt-6 grid grid-cols-2 gap-3">
+        <div class="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-3">
+          <div class="text-[10px] uppercase tracking-widest text-zinc-500">所要時間</div>
+          <div id="clearedTime"
+               class="mt-1 text-3xl font-semibold text-zinc-50 tabular-nums leading-tight truncate">00:00</div>
+        </div>
+        <div class="rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] px-3 py-3">
+          <div class="text-[10px] uppercase tracking-widest text-emerald-500/80">総ダメージ</div>
+          <div id="clearedDamage"
+               class="mt-1 text-3xl font-semibold text-emerald-300 tabular-nums leading-tight truncate">0</div>
+          <div id="clearedDamageSci" class="mt-0.5 text-[10px] text-zinc-600 tabular-nums truncate"></div>
+        </div>
+      </div>
+
+      <!-- 細かい統計 -->
+      <dl class="mt-5 divide-y divide-white/5 border-y border-white/5 text-sm">
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">総クリック数</dt>
+          <dd id="clearedClicks" class="text-zinc-200 tabular-nums truncate">0</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">クリック毎秒</dt>
+          <dd id="clearedCps" class="text-zinc-200 tabular-nums truncate">0.0</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">獲得アイテム</dt>
+          <dd id="clearedItems" class="text-zinc-200 tabular-nums truncate">0 / 0</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">最終攻撃力</dt>
+          <dd id="clearedAtk" class="text-zinc-200 tabular-nums truncate">0</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">最大ダメージ</dt>
+          <dd id="clearedMaxHit" class="text-zinc-200 tabular-nums truncate">0</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3 py-2">
+          <dt class="text-zinc-500 shrink-0">平均ダメージ毎秒</dt>
+          <dd id="clearedDps" class="text-zinc-200 tabular-nums truncate">0</dd>
+        </div>
+      </dl>
+    </div>
+    <button id="backBtn"
+            class="mb-10 safe-bottom w-full max-w-sm px-5 py-4 rounded-lg border border-white/10 bg-white/[0.05]
+                   text-zinc-100 font-medium hover:bg-white/[0.1] transition-all">
+      タイトルへ
+    </button>
+  </div>
+
+  <!-- 撃破時の画面フラッシュ -->
+  <div id="killFlash" class="pointer-events-none fixed inset-0"></div>
+
+  <!-- 撃破スローモーション中の暗転（ヴィネット） -->
+  <div id="slowMoVeil" class="pointer-events-none fixed inset-0"></div>
+
+  <!-- ===== 命数一覧 ===== -->
+  <div id="meisuuScreen" class="hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
+    <div class="flex-none flex items-center gap-3 px-4 py-4 border-b border-white/5">
+      <button id="meisuuBackBtn"
+              class="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
+              aria-label="もどる">✕</button>
+      <h2 class="text-lg font-bold text-zinc-50">命数一覧</h2>
+    </div>
+    <div class="flex-1 overflow-y-auto">
+      <div class="w-full max-w-sm mx-auto px-6 py-6">
+        <div id="meisuuList"></div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="fxCanvas"></canvas>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

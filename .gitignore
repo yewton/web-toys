@@ -4,7 +4,7 @@ node_modules/
 .pnp.js
 
 # Testing
-/test-results/
+test-results/
 /coverage/
 /tests/screenshots/
 /tests/results/
@@ -38,6 +38,7 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+.envrc
 
 # Logs
 npm-debug.log*
@@ -54,9 +55,14 @@ pids
 # Vite
 *.local
 
+# Temporary files
+tmp/
+code_artifact*.tsx
+
 # Gemini/Claude specific
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+!.claude/rules/
 .claude/settings.local.json
 memory/

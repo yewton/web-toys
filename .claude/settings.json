@@ -1,4 +1,16 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(scripts/dev.sh:*)",
+      "Bash(bash scripts/dev.sh:*)",
+      "Bash(./scripts/dev.sh:*)",
+      "mcp__chrome-devtools",
+      "Bash(curl -fsS http://localhost:*)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(lsof -ti:*)",
+      "Bash(npx playwright test:*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

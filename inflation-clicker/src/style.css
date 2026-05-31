@@ -1,0 +1,254 @@
+@import "tailwindcss";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0a0a0b;
+  -webkit-tap-highlight-color: transparent;
+  /* 連打をダブルタップズームと誤認させない（メニューのスクロールは許可） */
+  touch-action: manipulation;
+}
+
+/* 連打ゾーン（敵・アイテム）はジェスチャーを一切受け付けない＝ズーム暴発を防ぐ */
+#arena {
+  touch-action: none;
+}
+
+/* ダメージ数値を描くフルスクリーンキャンバス（最前面・クリック透過） */
+#fxCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* 体力ゲージのキャンバス（CSS でサイズを決め、JS が backing store を合わせる） */
+#gaugeCanvas {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+
+/* セーフエリア（ホームインジケータ等）を避けてフッターを必ず見せる */
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* --- 敵と硬化演出 --- */
+/* 注意: text-shadow / transform は --harden が変わったとき（クリック時）だけ更新する。
+   連続アニメは置かない（モバイルでの再描画コストを避けるため）。 */
+.enemy-figure {
+  --harden: 0;
+  --hit: 0;
+  position: relative;
+  cursor: pointer;
+  transition: text-shadow 0.2s ease-out;
+  /* ヒットのリコイル（縮み＋傾き）は硬いほど弱くなる＝硬化を体感させる */
+  transform: scale(calc(1 + var(--harden) * 0.1 - var(--hit) * 0.1 * (1 - var(--harden) * 0.8)))
+    rotate(calc(var(--hit) * -3deg * (1 - var(--harden) * 0.8)));
+  /* 削れるほど水色のシェル光が強まる（静的） */
+  text-shadow:
+    0 0 calc(6px + var(--harden) * 16px) rgba(125, 211, 252, calc(var(--harden) * 0.8)),
+    0 0 calc(2px + var(--harden) * 6px) rgba(255, 255, 255, calc(var(--harden) * 0.5));
+}
+/* 結晶シェル：硬化度に応じて二重のエネルギーリングが濃く現れる（文字に頼らず硬さを示す） */
+.enemy-figure::before,
+.enemy-figure::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: rgba(125, 243, 255, 0.9);
+  pointer-events: none;
+}
+.enemy-figure::before {
+  width: 1em;
+  height: 1em;
+  border-width: 3px;
+  transform: translate(-50%, -50%);
+  opacity: var(--harden);
+  box-shadow:
+    0 0 14px rgba(125, 243, 255, 0.8),
+    inset 0 0 14px rgba(125, 243, 255, 0.45);
+}
+.enemy-figure::after {
+  width: 1.25em;
+  height: 1.25em;
+  border-width: 2px;
+  border-color: rgba(180, 250, 255, 0.7);
+  transform: translate(-50%, -50%);
+  opacity: calc(var(--harden) * var(--harden) * 0.85); /* 終盤ほど一気に濃く */
+  box-shadow: 0 0 10px rgba(125, 243, 255, 0.5);
+}
+/* 撃破：KH 風「ヒットストップ → 5 秒級のスロー＋モーションブラーで吹き飛ぶ」。
+   easing は linear。後半が加速して見えないよう keyframes 自体で等速気味に時間を配分する。 */
+.enemy-figure.defeated {
+  animation: defeatBurst 5s linear forwards;
+  pointer-events: none;
+}
+@keyframes defeatBurst {
+  /* 0〜25%（0〜1.25s）: ヒットストップ。位置は動かさず光って溜める */
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+    filter: brightness(1) blur(0);
+  }
+  3% {
+    transform: translate(0, 0) scale(1.78) rotate(0deg);
+    opacity: 1;
+    filter: brightness(2.9) saturate(1.7) blur(0);
+  }
+  8% {
+    transform: translate(0, 0) scale(1.6) rotate(-6deg);
+    opacity: 1;
+    filter: brightness(2.5) saturate(1.5) blur(0);
+  }
+  25% {
+    transform: translate(0, 0) scale(1.55) rotate(-12deg);
+    opacity: 1;
+    filter: brightness(2) saturate(1.4) blur(0.5px);
+  }
+  /* 25〜88%（1.25〜4.4s）: 画面内をゆっくり斜め上へ漂う */
+  50% {
+    transform: translate(4vw, -9vh) scale(1.3) rotate(110deg);
+    opacity: 1;
+    filter: brightness(1.55) saturate(1.2) blur(2px);
+  }
+  72% {
+    transform: translate(11vw, -24vh) scale(1) rotate(260deg);
+    opacity: 1;
+    filter: brightness(1.25) saturate(1) blur(4px);
+  }
+  88% {
+    transform: translate(20vw, -46vh) scale(0.6) rotate(460deg);
+    opacity: 0.95;
+    filter: brightness(1) blur(7px);
+  }
+  /* 88〜100%（4.4〜5.0s）: ここで一気に画面外へ吹き抜ける */
+  100% {
+    transform: translate(48vw, -120vh) scale(0.12) rotate(820deg);
+    opacity: 0;
+    filter: brightness(0.55) blur(10px);
+  }
+}
+
+/* 撃破時の画面フラッシュ（一瞬だけ白む。スローモーションを際立たせるため少し尾を引く） */
+#killFlash {
+  background: #ffffff;
+  opacity: 0;
+  z-index: 55;
+}
+#killFlash.show {
+  animation: killFlash 0.9s ease-out;
+}
+@keyframes killFlash {
+  0% { opacity: 0; }
+  6% { opacity: 0.85; }
+  22% { opacity: 0.35; }
+  100% { opacity: 0; }
+}
+
+/* 撃破スローモーション中の暗転（中央以外を落として演出にフォーカスさせる） */
+#slowMoVeil {
+  background: radial-gradient(ellipse at center, transparent 22%, rgba(0, 0, 0, 0.72) 92%);
+  opacity: 0;
+  z-index: 45;
+  transition: opacity 0.35s ease-out;
+}
+#slowMoVeil.show {
+  opacity: 1;
+  transition: opacity 80ms ease-out;
+}
+
+/* 結果画面に置く「遠くでひっくり返ってピクピクしてる敵」。たまにだけ痙攣する。 */
+.defeated-figure {
+  display: inline-block;
+  transform: rotate(178deg);
+  filter: grayscale(0.55) brightness(0.55);
+  opacity: 0.88;
+  animation: defeatedTwitch 4.2s ease-in-out infinite;
+}
+@keyframes defeatedTwitch {
+  0%, 100%   { transform: rotate(178deg) translateY(0); }
+  3%         { transform: rotate(188deg) translateY(-2px); }
+  6%         { transform: rotate(168deg) translateY(2px); }
+  9%         { transform: rotate(180deg) translateY(0); }
+  /* ── 長い静止 ── */
+  48%        { transform: rotate(178deg) translateY(0); }
+  51%        { transform: rotate(174deg) translateY(-1px); }
+  53%        { transform: rotate(184deg) translateY(1px); }
+  56%        { transform: rotate(178deg) translateY(0); }
+}
+
+/* 戻るボタンの「武装解除」：撃破画面が出た直後の数百 msは押せない（連打の誤タップ防止） */
+#backBtn.arming {
+  pointer-events: none;
+  opacity: 0.35;
+  transform: translateY(6px);
+}
+
+/* 攻撃力ランプ中：攻撃パネルが静的に発光（連続アニメは置かず再描画コストを抑える） */
+#atkPanel {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+#atkPanel.powering {
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.35);
+  border-color: rgba(52, 211, 153, 0.5);
+}
+
+/* アイテム取得時のバフ演出：攻撃パネルが一瞬強くエメラルド発光（文字は出さない） */
+#atkPanel.buffed {
+  animation: buffFlash 0.6s ease-out;
+}
+@keyframes buffFlash {
+  0% { box-shadow: 0 0 6px rgba(52, 211, 153, 0.2); border-color: rgba(52, 211, 153, 0.4); }
+  25% {
+    box-shadow: 0 0 30px rgba(52, 211, 153, 0.9);
+    border-color: rgba(110, 231, 183, 1);
+    transform: scale(1.015);
+  }
+  100% { box-shadow: 0 0 14px rgba(52, 211, 153, 0.35); border-color: rgba(52, 211, 153, 0.5); }
+}
+
+/* ヒット時の振動＋白フラッシュ（translate は transform と独立なので --hit のリコイルと干渉しない） */
+.enemy-figure.hit-vibe {
+  animation: enemyHitVibe 0.15s ease-out, enemyHitFlash 0.25s ease-out;
+}
+@keyframes enemyHitVibe {
+  0%   { translate: 0 0; }
+  25%  { translate: -6px -3px; }
+  50%  { translate: 6px 4px; }
+  75%  { translate: -4px 2px; }
+  100% { translate: 0 0; }
+}
+@keyframes enemyHitFlash {
+  0%   { filter: brightness(3) saturate(0.5); }
+  40%  { filter: brightness(1.8); }
+  100% { filter: brightness(1); }
+}
+
+/* 命数のルビ（読み仮名）：ゲーム内の命数表示に付加する */
+ruby {
+  ruby-align: center;
+}
+ruby rt {
+  font-size: 0.5em;
+  opacity: 0.6;
+}
+
+/* アイテム取得時の軽い画面シェイク */
+.shake {
+  animation: shake 0.3s ease-in-out;
+}
+@keyframes shake {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.01); }
+}

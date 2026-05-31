@@ -16,6 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `index.html` | Landing page listing all apps |
 | `solitaire-cascade/` | Klondike Solitaire Victory Cascade |
 | `ants-nest-simulator/` | Ant Nest Simulator (pheromone-driven ant nest simulator) |
+| `inflation-clicker/` | Inflation Clicker (big-number clicker with a Kingdom-Hearts-style segmented HP gauge) |
+
+Per-app internals and test conventions live in path-scoped rules under `.claude/rules/` (loaded only when you work with matching files): `inflation-clicker.md`, `ants-nest-simulator.md`, `solitaire-cascade.md`, `testing.md`.
+
+**Rules authoring policy**: rules must contain only **cross-file constraints and non-obvious design decisions** — things that cannot be inferred from reading a single source file. Do NOT put in rules:
+- Per-file summaries (source files are heavily commented)
+- Anything that duplicates source comments
+- Test file lists (file names make coverage targets self-evident)
+
+The goal is zero dual-maintenance: if a rule entry would need updating every time the code changes, it belongs in the code comment, not the rule.
 
 ## Commands
 
@@ -32,6 +42,22 @@ npm run test:visual  # visual E2E test (Playwright + Claude image evaluation)
 ```
 
 CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` → `build`.
+
+## Verification utilities
+
+For manual verification (running the app, checking animations/visuals), **use these instead of writing throwaway `npm run dev &` / `pkill -f vite` / `ps`/`grep` / scratch scripts** — they are pre-approved in `.claude/settings.json`, so they don't trigger permission prompts:
+
+```bash
+scripts/dev.sh up [port]          # start vite detached (default 5173), idempotent, waits for HTTP 200
+scripts/dev.sh down [port|all]    # stop managed server(s) by pid/process-group (no blind pkill)
+scripts/dev.sh status             # list managed servers (port / pid / HTTP state)
+scripts/dev.sh logs [port]        # tail tmp/dev-<port>.log
+scripts/dev.sh url [app] [port]   # print an app URL (app: clicker | ants | solitaire)
+scripts/dev.sh shot <path|url> [out.png] [--full] [--wait ms] [--size WxH]  # static screenshot via Playwright chromium
+```
+
+- Lifecycle state lives in `tmp/` (`dev-<port>.pid`, `dev-<port>.log`; gitignored). Always `scripts/dev.sh down all` when finished.
+- For **animation / interactive visual checks**, drive the running server with the **chrome-devtools MCP** server (`navigate_page` / `take_screenshot` / `evaluate_script` / `wait_for`), allowed at server level in `.claude/settings.json`.
 
 ## CI / Supply chain
 
@@ -50,63 +76,7 @@ CI runs in this order: `npm audit` → `typecheck` → `npm test --coverage` →
 3. Add a card to the root `index.html`
 4. If the app uses Tailwind, add its HTML/src paths to `tailwind.config.ts` content list
 5. Add the app's `src/` to `tsconfig.json` `include`
-
-## App internals
-
-### ants-nest-simulator
-
-- **`state.ts`** — singleton holding all mutable simulation state: `grids` (3D voxel array, sized `GRID_WIDTH × GRID_HEIGHT × DEPTH`), `pheromone` (per-voxel `Float32Array` per layer), `soilCtxs` (one full-resolution canvas 2D context per Z layer for rendering soil), `ants` array, and slider values
-- **`grid.ts`** — all grid read/write functions. Public API takes **pixel** coordinates; the voxel conversion happens inside. `digGel` / `fillDirt` / `dropDirtInside` return the number of voxels changed so callers can conserve dug volume. `dropDirt(x, y, z, amount)` consumes that count to stack a mound near the ant
-- **`Ant.ts`** — `Ant` class with `update()` (simulation logic) and `draw()` (canvas rendering) methods. Tracks `carryAmount` in voxel units, hands it back to `dropDirt` on deposit (volume conservation)
-- **`simulation.ts`** — core render loop. Composites the layered grid back-to-front to create a depth effect; initializes grids at voxel resolution. Exposes `advanceSimulation()` as `window.__antSimAdvance` so Playwright tests can advance the simulation instantly without rAF. Removing this exposure will break visual tests
-- **`debugView.ts`** — debug overlay. Voxel boundary lines are drawn only when `VOXEL_SIZE >= MIN_VOXEL_SIZE_FOR_GRID_LINES` (currently `3`) — finer grids are too dense to read
-
-Voxel grid cell values: `0` = air, `1` = soil (diggable — single voxel type covering both the original substrate and ant-deposited material), `3` = protected zone (not diggable). `soilCanvases` are per-layer binary opaque-white **masks** (encoding "is there soil here?"). Color comes from a shared y-axis `gradientCanvas` and is applied at render time by `source-in` compositing mask × gradient into `compositeCanvas`. Because every soil pixel — original substrate, ant mound, redeposited tunnel fill — takes its color from the same gradient sampled at its own y, all deposits blend seamlessly with the surrounding substrate. `soilFillStyle()` returns `'#fff'`; it's only used when adding to the mask.
-
-`VOXEL_SIZE` is a pure internal-resolution dial (allowed: `2`, `4`; default `2`). Body-scale constants in `constants.ts` (`DIG_RADIUS_PX`, `DIG_REACH_PX`, `DROP_GRAIN_RADIUS_PX`, `DROP_JITTER_PX`) are pixel-anchored — they describe the ant, not the grid. Changing `VOXEL_SIZE` only changes how grainy the substrate feels; the volume-conservation invariant (`carryAmount` in / `dropDirt` out) holds at every size. The UI selector writes to `localStorage` (`antSim.voxelSize`) and reloads the page so `constants.ts` reads the new value.
-
-### solitaire-cascade
-
-- **3-layer canvas**: `gameCanvas` (green background + cards), `blurCanvas` (trails/reflex glow), `particleCanvas` (particles) stacked on top of each other.
-- **Object pools**: `cardPool` / `particlePool` reuse instances to suppress GC. Returns to pool when `Card.active = false`.
-- **Module singletons**: `config.ts` (layout dimensions, updated on resize), `effectState.ts` (visual effect on/off and particle limit calculation).
-- **Auto mode**: automatically replays a 4-suit deck each time all cards have exited.
-
-## Unit tests
-
-Tests live in `src/__tests__/*.test.ts` inside each app directory. The test environment is `node` (no DOM).
-
-**Canvas mock pattern** — functions that call `CanvasRenderingContext2D` methods are tested by injecting a minimal no-op object into `state.soilCtxs` (for grid functions) or by passing a mock ctx directly to `draw()`:
-
-```ts
-function makeCanvasCtx(): CanvasRenderingContext2D {
-  return { save: () => {}, restore: () => {}, beginPath: () => {}, arc: () => {}, fill: () => {},
-           clearRect: () => {}, fillStyle: '', globalCompositeOperation: 'source-over' } as unknown as CanvasRenderingContext2D;
-}
-```
-
-**`textures.ts` is excluded from coverage** (`vite.config.ts` → `coverage.exclude`) because it calls `document.createElement('canvas')` at runtime and cannot be exercised in the node environment.
-
-## Visual E2E Tests (ants-nest-simulator)
-
-Three Playwright tests live in `tests/`:
-
-| Test file | Steps | Purpose |
-|---|---|---|
-| `ant-nest-visual.spec.ts` | 30,000 | Verifies a nest-like structure forms (tunnels + dirt mound) via LLM evaluation |
-| `ant-nest-regression.spec.ts` | 300,000 | Regression guard: asserts surface-ant mean X stays within ±100 of center; no top-edge stacking |
-| `ant-nest-evolution.spec.ts` | 25,000 | Captures 5 timestamped screenshots (5k/10k/15k/20k/25k) for time-series visual review |
-
-- Port defaults to **5173**; set `PORT=5174` to avoid conflicts with a running dev server
-- Screenshots are saved to `tests/screenshots/` (in `.gitignore`)
-- `ant-nest-visual.spec.ts` requires `claude` CLI in PATH; the other two do not
-- `__antSimAdvance(n)` and `__antSimState` are exposed on `window` by `main.ts` for test use
-
-### Mandatory pre-PR check (ants-nest-simulator changes)
-
-These tests are **not** run in CI. Whenever a change touches `ants-nest-simulator/` or `tests/ant-nest-*`, run them locally before opening a PR and complete the VRT checklist in `.github/pull_request_template.md`. The checklist there is the single source of truth — do not duplicate it; just satisfy it.
-
-The `.claude/settings.json` PreToolUse hook prints a reminder when `gh pr create` is invoked on a branch with ants-nest-simulator changes.
+6. If the app has non-obvious internals, add a path-scoped rule at `.claude/rules/<app-name>.md` (`paths: ["<app-name>/**"]`) rather than expanding this file
 
 ## Creating pull requests
 
