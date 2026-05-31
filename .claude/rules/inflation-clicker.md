@@ -5,38 +5,20 @@ paths:
 
 # inflation-clicker internals
 
-Each source file is heavily commented (in Japanese); this rule only captures the **cross-file / non-obvious** facts you can't get by reading one file. For per-line mechanics, read the file.
+Source files are heavily commented in Japanese. This rule captures only **cross-file constraints and non-obvious design decisions** — things you cannot infer from reading a single file.
 
-## Cross-cutting invariants
+## Design invariants
 
-- **Courses differ ONLY in `hp.e`.** All density/attack tuning is global; everything per-course is derived from HP. The five courses are命数-named after their own HP exponent (which lands exactly on a `joUnits`命数): 無量大数 `10^68` / 摩婆羅 `10^896` / 界分 `10^7168` / 不可説不可説転 `10^(7·2^122)≈10^3.7e37` / グラハム数 `10^1.7e308`. Only グラハム数 is `extreme: true` (amber warning card in menu); the others use the standard white card.
-- **Gameplay is three-variable and phase-free** (`game.ts`/`state.ts`): `atk.e` (current per-click damage magnitude, moves *only* via the post-item ramp), `atkTargetE` (ramp target, bumped one `chunkAtE` per item), `damageE` (cumulative damage in log10; defeat at `damageE ≥ hp.e`). No fuel / phase gates / idle trickle — items are purely click-count-paced (`ATTACK.CLICK_BUDGET_PER_ITEM = 9` clicks → one spawn, up to `cfg.totalItems`).
-- **Dynamic density keeps the gauge's per-click drain rate course-agnostic** (`config.ts`): `chunkAtE(e) = max(C0=1, e/INFL_E=100)` is the per-item `atk.e` jump; `expPerBoxAt(e) = ITEMS_PER_BOX·chunkAtE(e)`. They grow in lockstep above `INFL_E`, so `consumed`-per-click stays ≈ `1/(CLICK_BUDGET·ITEMS_PER_BOX)` on every course. `consumedFromDamageE` is the closed-form integral `∫ 1/expPerBoxAt de`; `consumedAtDamage(d, hpE)` stretches it so `consumed` lands exactly on `totalSegments` at `damageE = hp.e`.
-- **Damage-number表記 policy** (`format.ts`): 厳密でなくてよいが嘘にならない / 命数で数字の羅列を避ける / 無量大数を無尽蔵に並べない。Any change here must preserve all three.
+- **Courses differ ONLY in `hp.e`.** All density/attack tuning is global and derived from HP. The five courses are命数-named after their own HP exponent: 無量大数 `10^68` / 摩婆羅 `10^896` / 界分 `10^7168` / 不可説不可説転 `10^(7·2^122)` / グラハム数 `10^1.7e308`. Only グラハム数 is `extreme: true` (amber warning card in menu).
+- **Gameplay is three-variable and phase-free** (`state.ts` / `game.ts`): `atk.e` (per-click damage magnitude, moves only via the post-item ramp) / `atkTargetE` (ramp target, bumped one `chunkAtE` per item) / `damageE` (cumulative log10 damage; defeat at `damageE ≥ hp.e`). No fuel, phase gates, or idle trickle.
+- **Dynamic density** (`config.ts`) keeps per-click gauge drain rate course-agnostic: `chunkAtE(e) = max(C0=1, e/INFL_E=100)` and `expPerBoxAt = ITEMS_PER_BOX · chunkAtE` grow in lockstep, so `consumed`-per-click stays constant across all courses. `consumedAtDamage` stretches the integral so `consumed` lands exactly on `totalSegments` at defeat.
+- **Number display policy** (`format.ts`): 厳密でなくてよいが嘘にならない / 命数で数字の羅列を避ける / 無量大数を無尽蔵に並べない。Any change must preserve all three.
 
-## Files
+## Non-obvious per-file facts
 
-- **`bignum.ts`** — `BigNum` (`m × 10^e`), the type all HP/attack values use. Pure, fully unit-tested.
-- **`format.ts`** — `BigNum` → compound kanji / english / sci, plus `formatTime` and `addRuby`/`splitForRuby` (wrap命数 names with 読み仮名 for DOM / canvas). Magnitude bands: `4 ≤ e < 72` → 万進法 compound kanji (≤3 units, e.g. `123極4500載67正`); `e ≥ 112` → 華厳経「上数法」命数 (`joUnits`: 矜羯羅 `10^112`, 阿伽羅 `10^224`, … **each the previous squared**) by division — take the largest命数 `U ≤ e`, then the coefficient `value/U` is **recursively formatted** so smaller命数 nest inside larger (`10^800` → `1京矜羯羅阿伽羅最勝`, not a long 無量大数 chain). Gap `10^72`–`10^111` (no命数) stacks 無量大数 (`compoundAboveMuryo`). When the joUnit recursion bottoms out (`_joDepth === 3`) on a still-huge coefficient, it emits a single「k乗無量大数」using the **nearest** power `k = round(e/68)` — the leading-block 端数 is deliberately **dropped, not concatenated** (fusing its digits with `k` would be misread as `無量大数^(head·k)`, an orders-of-magnitude lie; the rounding error is ≤ `10^34`, negligible in the exponent). Beyond all命数 (グラハム級, `coeff.e ≥ u.e`) → recursive kanji power tower (`10^(1.7×10^308)` → `10^10^308`). Pure.
-- **`config.ts`** — `difficultyConfigs` built by `course(name, desc, hpE, extreme)`. Tuning lives in `GAUGE_DENSITY` (`ITEMS_PER_BOX`, `C0`, `INFL_E` — see invariants above), `DISPLAY_CAP_BOXES = 32`, `ATTACK.CLICK_BUDGET_PER_ITEM`, and `GAUGE`/`COLORS`. `totalSegmentsForHp(hpE) = ceil(consumedFromDamageE(hp.e))` is the true segment count (無量大数≈7 / 摩婆羅≈32 / 界分≈53 / 不可説不可説転≈827); `displayBoxesForHp` caps it at 32, so over-cap courses enter conveyor mode.
-- **`state.ts`** — game-state singleton + **per-difficulty** `localStorage` saves (`inflationClicker.save.<diff>`; `migrateLegacySave` folds the old single-slot key in once at boot). `enemyEmoji` is persisted/restored. `hasSavedGameForDiff` / `loadSaveForDiff` / `clearSaveForDiff` drive the menu's per-course つづきから.
-- **`hpGauge.ts`** — pure, course-agnostic gauge model. `sliceGauge(consumed, total, displayed) → {segmentsLeft, barFill, isFinal}` (`barFill = 1 − frac(consumed)`). `advanceGauge` runs **conveyor** mode (over-cap, while `consumed < totalSegments − displayed`) vs **depletion** mode, and lags `displayedConsumed` behind real `consumed` for the red trail. `finalLayer` splits the last bar into green→blue→yellow reveals. Unit-tested; per-step logic is in-code.
-- **`gaugeView.ts`** — Canvas render of the hpGauge model (**excluded from coverage**, canvas-only). One position-based `drawGauge` for all courses: box size is fixed to `DISPLAY_CAP_BOXES − 1` = 31 (摩婆羅) boxes, so 無量大数 (6 boxes) sits compact on the right and over-cap courses overflow/clip off the **left** edge — communicating "far too long" with no per-course conditionals. Conveyor vs depletion box animation mirrors `advanceGauge`; rendering details are commented in-code.
-- **`particles.ts`** — damage-number particles + spark/ring/burst FX. Real-time decay (~0.6s life, fps-independent), capped (`MAX_PARTICLES = 36`, `MAX_DAMAGE_NUMBERS = 4`). Damage numbers are `formatNumber(dmg, 'kanji', 3)` rendered with **canvas ruby** (`splitForRuby` → 読み仮名 over each命数 name) and a small sci line underneath, drawn in a second pass over the sparks (so emerald power-up sparks can't recolor a number). Node-testable (mock `measureText`/`stroke`).
-- **`ui.ts`** — all DOM wiring. HP is shown **only** by the gauge (no number). `setHardening` / `setPowering` / `setEnemyHit` etc. are text-free visual states. Result/stat readouts (`atk` / `maxHit` / `dps`) use `addRuby(formatNumber(…, 'kanji'))` + `fitText` shrink, with sci companions on the result overlay. Takes `UICallbacks` from `game.ts` (no cycle: `game → ui`, `main → game`).
-- **`game.ts`** — game logic + the single dirty-checked `requestAnimationFrame` loop (stats DOM / gauge canvas / fx canvas each redrawn only on change). Post-item ramp: each click moves `atk.e` toward `atkTargetE` by `chunkAtE(atk.e)/CLICK_BUDGET_PER_ITEM`, stopping when caught up (the "powering" glow is lit exactly during this gap). `setHardening` is **cosmetic only** — darkens a crystalline shell by `damageE/hp.e` (stays near 0 for extreme courses); it is not a gameplay phase. `triggerDefeat` blocks input, plays a ~5.2s slow-mo burst, then reveals the result overlay. DEV-only `window.__clicker` (`state` / `getGauge()` / `particles` / `setAtkExp` / `setDamageE` / `setConsumed` / `autoClick`) + 自動クリック / クリア直前 buttons, tree-shaken from production.
-- **Layout/perf** — `index.html` is a `dvh` flex column (`min-h-0` main) so the footer stays visible on mobile; rapid-tap zoom is suppressed via `touch-action` + a `gesturestart`/`gesturechange`/`gestureend` preventDefault in `main.ts`. With the dirty-checked loop, real-time particle decay on a DPR-2-capped fx canvas, and no continuous CSS animation on large elements, it holds 60fps under 4× CPU throttle. Long numbers shrink to fit (`fitText` for DOM, per-particle font scaling for popups).
-
-## Tests
-
-Unit tests in `src/__tests__/` (Vitest, node environment). Run with `npx vitest run inflation-clicker`.
-
-| File | Covers |
-|---|---|
-| `bignum.test.ts` | 正規化・加減算・比較・log10 |
-| `config.test.ts` | 動的密度（chunk / expPerBox / consumed の往復）・総箱数・アイテム総数 |
-| `format.test.ts` | 複合漢数字 / 上数法命数 / 英語 / 科学表記 / ルビ / 時刻 |
-| `mechanics.test.ts` | 攻撃ランプ・ダメージ加算（logAdd）・アイテム供給・撃破判定 |
-| `hpGauge.test.ts` | position 計算・ゲージ分割・赤残像の追従・箱フラッシュ判定 |
-| `particles.test.ts` | パーティクルの生成・物理・上限・描画（モック ctx） |
-| `state.test.ts` | 難易度別セーブ/ロード・レガシー移行・初期化 |
+- **`format.ts`**: When the joUnit recursion bottoms out (`_joDepth === 3`) on a still-huge coefficient, the leading-block 端数 is **dropped, not concatenated** — fusing it with `k` would be misread as `無量大数^(head·k)`, an orders-of-magnitude lie. The rounding error (≤ `10^34` in the exponent) is negligible.
+- **`gaugeView.ts`**: **Excluded from test coverage** (canvas-only). Box size is fixed to 31 (= `DISPLAY_CAP_BOXES − 1`) so 無量大数's 6 boxes sit compact on the right and over-cap courses overflow off the **left** edge — communicating "far too long to show" without per-course conditionals.
+- **`game.ts`**: `setHardening` is **cosmetic only** (shell opacity by `damageE/hp.e`); it is not a gameplay phase. DEV-only `window.__clicker` (`state` / `getGauge()` / `particles` / `setAtkExp` / `setDamageE` / `setConsumed` / `autoClick`) + 自動クリック / クリア直前 buttons are tree-shaken from production.
+- **`state.ts`**: Save keys follow `inflationClicker.save.<diff>`. `migrateLegacySave` folds the old single-slot key once at boot.
+- **`ui.ts`**: HP is shown **only** by the gauge — no HP number is ever displayed. Dependency direction is `game → ui`, `main → game` (no cycle).
+- **`particles.ts`**: Node-testable via mock `measureText`/`stroke`. Damage numbers are drawn in a second pass over sparks so power-up emerald sparks cannot recolor a number.
